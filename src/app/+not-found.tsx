@@ -1,17 +1,55 @@
-import { Link, Stack } from 'expo-router';
-
-import { Text, View } from '@/src/components/Themed';
+import { Link, Stack } from "expo-router";
+import { Text, View, TouchableOpacity } from "react-native";
 
 export default function NotFoundScreen() {
   return (
     <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <View className="flex flex-1 items-center justify-center p-5">
-        <Text className="text-xl font-bold">This screen doesn't exist.</Text>
+      <Stack.Screen options={{ title: "Page Not Found" }} />
+      <View className="flex-1 bg-gray-50 items-center justify-center px-6">
+        {/* Error Illustration */}
+        <View className="items-center mb-8">
+          <View className="bg-red-100 rounded-full p-8 mb-6">
+            <Text className="text-6xl">🚧</Text>
+          </View>
+          <Text className="text-3xl font-bold text-gray-900 mb-3 text-center">
+            Oops! Page Not Found
+          </Text>
+          <Text className="text-gray-600 text-center leading-6 max-w-sm">
+            The page you're looking for doesn't exist or may have been moved.
+          </Text>
+        </View>
 
-        <Link href="/" className="mt-4 py-4">
-          <Text className="text-base text-link">Go to home screen!</Text>
+        {/* Error Details Card */}
+        <View className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-8 w-full max-w-sm">
+          <Text className="text-lg font-semibold text-gray-900 mb-4 text-center">
+            What happened?
+          </Text>
+          <View className="space-y-2">
+            <Text className="text-gray-600 text-sm">
+              • The URL might be incorrect
+            </Text>
+            <Text className="text-gray-600 text-sm">
+              • The page might have been removed
+            </Text>
+            <Text className="text-gray-600 text-sm">
+              • You might not have permission
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Button */}
+        <Link href="/" asChild>
+          <TouchableOpacity className="bg-blue-600 rounded-lg py-4 px-8 w-full max-w-sm active:bg-blue-700">
+            <Text className="text-white font-semibold text-center">
+              🏠 Return to Home
+            </Text>
+          </TouchableOpacity>
         </Link>
+
+        {/* Help Text */}
+        <Text className="text-gray-500 text-sm mt-6 text-center">
+          Need help? Contact support if this issue persists.
+        </Text>
       </View>
     </>
   );
