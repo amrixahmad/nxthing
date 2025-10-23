@@ -39,6 +39,9 @@ export default function Auth() {
   /** User's password */
   const [password, setPassword] = useState("");
 
+  const [duprId, setDuprId] = useState("");
+  const [duprRating, setDuprRating] = useState("");
+
   /** Loading state during authentication */
   const [loading, setLoading] = useState(false);
 
@@ -96,6 +99,19 @@ export default function Auth() {
     if (error) {
       Alert.alert("Sign Up Error", error.message);
     } else {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData?.user;
+        if (user) {
+          const updates = {
+            id: user.id,
+            dupr_id: duprId || null,
+            dupr_rating: duprRating ? Number(duprRating) : null,
+            updated_at: new Date().toISOString(),
+          };
+          await supabase.from("profiles").upsert(updates);
+        }
+      } catch (e) {}
       Alert.alert("Success", "Check your email for verification link!");
     }
     setLoading(false);
@@ -170,6 +186,39 @@ export default function Auth() {
                 </Text>
               )}
             </View>
+
+            {isSignUp && (
+              <>
+                <View className="mb-4">
+                  <Text className="text-base font-medium text-gray-700 mb-2">
+                    DUPR ID (optional)
+                  </Text>
+                  <TextInput
+                    className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                    onChangeText={setDuprId}
+                    value={duprId}
+                    placeholder="Enter your DUPR ID"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View className="mb-6">
+                  <Text className="text-base font-medium text-gray-700 mb-2">
+                    DUPR Rating (optional)
+                  </Text>
+                  <TextInput
+                    className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                    onChangeText={setDuprRating}
+                    value={duprRating}
+                    placeholder="e.g. 3.50"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="decimal-pad"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </>
+            )}
 
             {/* Submit Button */}
             <TouchableOpacity

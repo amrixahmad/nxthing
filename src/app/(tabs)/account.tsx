@@ -48,6 +48,8 @@ export default function Account() {
 
   /** User's avatar image URL */
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [duprId, setDuprId] = useState("");
+  const [duprRating, setDuprRating] = useState("");
 
   // Load user profile when session changes
   useEffect(() => {
@@ -69,7 +71,7 @@ export default function Account() {
 
       const { data, error, status } = await supabase
         .from("profiles")
-        .select(`username, website, avatar_url`)
+        .select(`username, website, avatar_url, dupr_id, dupr_rating`)
         .eq("id", session?.user.id)
         .single();
 
@@ -81,6 +83,12 @@ export default function Account() {
         setUsername(data.username || "");
         setWebsite(data.website || "");
         setAvatarUrl(data.avatar_url || "");
+        setDuprId((data as any).dupr_id || "");
+        setDuprRating(
+          (data as any).dupr_rating !== null && (data as any).dupr_rating !== undefined
+            ? String((data as any).dupr_rating)
+            : ""
+        );
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -107,10 +115,14 @@ export default function Account() {
     username,
     website,
     avatar_url,
+    dupr_id,
+    dupr_rating,
   }: {
     username: string;
     website: string;
     avatar_url: string;
+    dupr_id: string | null;
+    dupr_rating: number | null;
   }) {
     try {
       setUpdating(true);
@@ -121,6 +133,8 @@ export default function Account() {
         username,
         website,
         avatar_url,
+        dupr_id,
+        dupr_rating,
         updated_at: new Date().toISOString(),
       };
 
@@ -224,13 +238,50 @@ export default function Account() {
             />
           </View>
 
+          {/* DUPR ID Field */}
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              DUPR ID
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={duprId}
+              onChangeText={setDuprId}
+              placeholder="Enter your DUPR ID"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+            />
+          </View>
+
+          {/* DUPR Rating Field */}
+          <View className="mb-6">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              DUPR Rating
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={duprRating}
+              onChangeText={setDuprRating}
+              placeholder="e.g. 3.50"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+              autoCapitalize="none"
+            />
+          </View>
+
           {/* Update Button */}
           <TouchableOpacity
             className={`rounded-lg py-4 px-6 ${
               updating ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"
             }`}
             onPress={() =>
-              updateProfile({ username, website, avatar_url: avatarUrl })
+              updateProfile({
+                username,
+                website,
+                avatar_url: avatarUrl,
+                dupr_id: duprId || null,
+                dupr_rating: duprRating ? Number(duprRating) : null,
+              })
             }
             disabled={updating}
           >
