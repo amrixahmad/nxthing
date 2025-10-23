@@ -1,0 +1,56 @@
+# Guiding principles and best practices for developing the Pickleball Tournament Management App.
+# This file should be used as a reference by the agentic IDE to ensure code quality and architectural consistency.
+
+# --- Core Development Principles ---
+
+# 1. Dependency Management
+# Rule: Use the current dependencies as is. Do not update or add on any new dependencies to avoid app-breaking conflicts.
+# Rationale: Maintaining a stable dependency tree is crucial for project stability. Unvetted updates can introduce breaking changes and require significant refactoring.
+
+# 2. Implementation Strategy
+# Rule: Implement modules and features incrementally. Avoid attempting to build entire modules in a single step.
+# Rationale: An incremental, feature-by-feature approach allows for easier testing, debugging, and integration. It promotes building small, functional pieces that compose into a larger, more robust application.
+
+# --- Architecture & Code Style ---
+
+# 3. Navigation (Expo Router)
+# Rule: All new screens and routes must be created as files within the `src/app/` directory, adhering to the file-based routing convention. Use layout routes (`_layout.tsx`) to define shared UI, context, and authentication guards for protected routes.[1]
+# Rationale: This maintains a clean, declarative, and predictable navigation structure that is easy to manage as the application grows.
+
+# 4. Styling (NativeWind)
+# Rule: All styling must be done using NativeWind utility classes directly in the JSX markup. Avoid using the built-in `StyleSheet.create` API. Custom theme values (colors, fonts, spacing) should be defined in `tailwind.config.js`.
+# Rationale: This co-locates styles with their components, improving readability and development speed, consistent with the project's modern setup.[1]
+
+# 5. State Management
+# Rule: Use React Context and standard Hooks (`useState`, `useContext`, etc.) for state management. Global state, such as the authenticated user session, should be handled via Context Providers wrapped in a layout route.
+# Rationale: The starter template is built on this simple and effective pattern. Avoid introducing heavier state management libraries (e.g., Redux, Zustand) to keep the stack lean and consistent.[1]
+
+# 6. Component Structure
+# Rule: Create small, reusable, and preferably stateless UI components in the `src/components/` directory. Components should be designed to be self-contained and receive data and callbacks via props.
+# Rationale: This promotes a modular, DRY (Don't Repeat Yourself), and maintainable codebase, following the established project structure.[1]
+
+# 7. TypeScript Usage
+# Rule: The entire codebase must use TypeScript with strict typing. Leverage auto-generated types from Supabase for all database interactions to ensure end-to-end type safety.
+# Rationale: Strict typing reduces runtime errors, improves code quality, and enhances the developer experience through better autocompletion and error checking.[1]
+
+# --- Backend & Data Management (Supabase) ---
+
+# 8. Database Schema Design
+# Rule: The PostgreSQL database schema must be designed relationally. Define clear relationships between entities like `users`, `tournaments`, `teams`, `matches`, and `rounds` using foreign keys to ensure data integrity.
+# Rationale: Tournament data is inherently relational. A proper relational schema is technically superior for this use case, as it prevents data inconsistencies and simplifies complex queries.
+
+# 9. Database Migrations
+# Rule: All changes to the database schema (creating tables, adding columns, defining policies) must be managed through Supabase migration files located in the `supabase/migrations/` directory. Do not make schema changes directly in the Supabase dashboard.
+# Rationale: This provides version control for the database schema, making it easy to replicate, test, and roll back changes across different environments (local, staging, production).[1]
+
+# 10. Data Security (Row Level Security)
+# Rule: All database tables that contain user-specific or sensitive data must have Row Level Security (RLS) policies enabled. Policies should be written to restrict data access to authorized users only (e.g., a user can only see tournaments they created or are participating in).
+# Rationale: RLS is a critical security feature of Supabase/PostgreSQL that prevents unauthorized data access at the database level, ensuring user data is protected.[1]
+
+# 11. Server-Side Logic (Edge Functions)
+# Rule: Complex, computationally intensive, or sensitive business logic must be implemented as Supabase Edge Functions. This specifically applies to algorithms for bracket generation and automated match scheduling.
+# Rationale: This offloads heavy computation from the client device, improves application performance, and secures proprietary logic on the server where it cannot be reverse-engineered.[1]
+
+# 12. Real-time Functionality
+# Rule: For features requiring real-time updates, such as live scoring, leaderboards, and bracket progression, use Supabase Realtime Subscriptions to listen for database changes.
+# Rationale: This provides a reactive and engaging user experience where data updates automatically across all connected clients, which is essential for a live tournament application.

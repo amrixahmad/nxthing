@@ -16,6 +16,19 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
 
 /** Supabase anonymous key from environment variables */
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
+const isBrowser = typeof window !== "undefined";
+const authConfig = isBrowser
+  ? {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    }
+  : {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    };
 
 /**
  * Configured Supabase client instance
@@ -34,10 +47,5 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
  * const { data, error } = await supabase.functions.invoke('openai', { body: { message } });
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
+  auth: authConfig,
 });
