@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
 import { Stack, Link, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
 export default function NewTournament() {
   const { session } = useSession();
@@ -20,6 +21,10 @@ export default function NewTournament() {
   const [calendarTarget, setCalendarTarget] = useState<"start" | "end" | "regStart" | "regEnd" | null>(null);
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<"start" | "end" | "regStart" | "regEnd" | null>(null);
+  const [pickerDate, setPickerDate] = useState<Date>(new Date());
 
   function parseISODate(v: string): Date | null {
     if (!v) return null;
@@ -77,6 +82,40 @@ export default function NewTournament() {
     const rows: Array<Array<number | null>> = [];
     for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
     return rows;
+  }
+
+  function handlePick(target: "start" | "end" | "regStart" | "regEnd") {
+    if (Platform.OS === "web") {
+      openCalendar(target);
+      return;
+    }
+    setPickerTarget(target);
+    const v =
+      target === "start"
+        ? startDate
+        : target === "end"
+        ? endDate
+        : target === "regStart"
+        ? regStart
+        : regEnd;
+    const dt = parseISODate(v) || new Date();
+    setPickerDate(dt);
+    setShowPicker(true);
+  }
+
+  function onNativeChange(event: DateTimePickerEvent, date?: Date) {
+    if (event.type === "dismissed") {
+      setShowPicker(false);
+      return;
+    }
+    if (date && pickerTarget) {
+      const iso = fmtISO(date);
+      if (pickerTarget === "start") setStartDate(iso);
+      if (pickerTarget === "end") setEndDate(iso);
+      if (pickerTarget === "regStart") setRegStart(iso);
+      if (pickerTarget === "regEnd") setRegEnd(iso);
+    }
+    setShowPicker(false);
   }
 
   async function createTournament() {
@@ -150,7 +189,7 @@ export default function NewTournament() {
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => openCalendar("start")}>
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handlePick("start")}>
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
@@ -167,7 +206,7 @@ export default function NewTournament() {
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => openCalendar("end")}>
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handlePick("end")}>
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
@@ -184,7 +223,7 @@ export default function NewTournament() {
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => openCalendar("regStart")}>
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handlePick("regStart")}>
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
@@ -201,7 +240,7 @@ export default function NewTournament() {
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => openCalendar("regEnd")}>
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handlePick("regEnd")}>
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
@@ -291,6 +330,15 @@ export default function NewTournament() {
           </View>
         </View>
       </Modal>
+
+      {showPicker && Platform.OS !== "web" && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="date"
+          display="default"
+          onChange={onNativeChange}
+        />
+      )}
     </ScrollView>
   );
 }

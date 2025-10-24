@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { Stack } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { Calendar, DateData } from "react-native-calendars";
 
 type Tournament = {
   id: number;
@@ -21,17 +22,11 @@ function fmtDate(d?: string | null) {
   }
 }
 
-function monthMatrix(y: number, m: number) {
-  const first = new Date(y, m, 1);
-  const firstWeekday = first.getDay();
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const cells: Array<number | null> = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-  const rows: Array<Array<number | null>> = [];
-  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
-  return rows;
+function isoDay(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 export default function TournamentsCalendar() {
@@ -73,30 +68,22 @@ export default function TournamentsCalendar() {
     return map;
   }, [items]);
 
-  const monthLabel = useMemo(
-    () => new Date(year, month, 1).toLocaleString(undefined, { month: "long", year: "numeric" }),
-    [year, month]
-  );
+  const currentIso = useMemo(() => isoDay(new Date(year, month, 1)), [year, month]);
 
-  function prevMonth() {
-    setMonth((m) => {
-      if (m === 0) {
-        setYear((y) => y - 1);
-        return 11;
-      }
-      return m - 1;
-    });
+  function onMonthChange(mo: DateData) {
+    setYear(mo.year);
+    setMonth(mo.month - 1);
   }
 
-  function nextMonth() {
-    setMonth((m) => {
-      if (m === 11) {
-        setYear((y) => y + 1);
-        return 0;
-      }
-      return m + 1;
-    });
-  }
+  const markedDates = useMemo(() => {
+    const marks: Record<string, { marked: boolean }> = {};
+    for (const t of items) {
+      if (!t.start_date) continue;
+      const d = isoDay(new Date(t.start_date));
+      marks[d] = { marked: true };
+    }
+    return marks;
+  }, [items]);
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
@@ -110,41 +97,17 @@ export default function TournamentsCalendar() {
       </View>
 
       <View className="px-4 mt-6">
-        <View className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-          <View className="flex-row items-center justify-between mb-2">
-            <TouchableOpacity className="px-3 py-2" onPress={prevMonth}>
-              <Text className="text-lg">‹</Text>
-            </TouchableOpacity>
-            <Text className="text-lg font-semibold">{monthLabel}</Text>
-            <TouchableOpacity className="px-3 py-2" onPress={nextMonth}>
-              <Text className="text-lg">›</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="flex-row justify-between px-2 mb-2">
-            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((w) => (
-              <Text key={w} className="w-10 text-center text-xs text-gray-500">{w}</Text>
-            ))}
-          </View>
-
-          {monthMatrix(year, month).map((row, i) => (
-            <View key={i} className="flex-row justify-between px-2 mb-1">
-              {row.map((d, j) => (
-                <View key={j} className="w-10 h-10 items-center justify-center">
-                  {d ? (
-                    <View className="items-center justify-center">
-                      <Text className="text-sm text-gray-800">{d}</Text>
-                      {dayMap[d] && dayMap[d].length > 0 && (
-                        <View className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-1" />
-                      )}
-                    </View>
-                  ) : (
-                    <Text className="text-transparent">0</Text>
-                  )}
-                </View>
-              ))}
-            </View>
-          ))}
+        <View className="bg-white rounded-xl border border-gray-100 p-2 mb-4">
+          <Calendar
+            current={currentIso}
+            onMonthChange={onMonthChange}
+            markedDates={markedDates}
+            markingType="dot"
+            theme={{
+              todayTextColor: "#2563eb",
+              selectedDayBackgroundColor: "#2563eb",
+            }}
+          />
         </View>
 
         <View className="bg-white rounded-xl border border-gray-100 p-4">
