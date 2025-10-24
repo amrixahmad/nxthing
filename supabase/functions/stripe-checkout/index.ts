@@ -75,7 +75,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .select(
         `id, status, payment_status, payment_amount, payment_currency, created_by,
          category:category_id (
-           id, name, registration_fee, tournament:tournament_id (
+           id, name, registration_fee, max_teams, tournament:tournament_id (
              id, title, organizer_id, status, registration_start_date, registration_end_date
            )
          )`
@@ -91,8 +91,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const entry = entryRows[0] as any;
-    const category = entry.category;
-    const tournament = category?.tournament;
+    let category = entry.category as any;
+    if (Array.isArray(category)) category = category[0];
+    let tournament = category?.tournament as any;
+    if (Array.isArray(tournament)) tournament = tournament[0];
 
     if (!category || !tournament) {
       return new Response(JSON.stringify({ error: "Entry not linked to category/tournament" }), {
@@ -129,7 +131,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    const fee: number = Number(category.registration_fee || 0);
+    const fee: number = Number((category?.registration_fee ?? 0) as number);
     if (!fee || isNaN(fee) || fee <= 0) {
       return new Response(JSON.stringify({ error: "Invalid registration fee" }), {
         status: 400,
@@ -137,6 +139,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
     const currency = (entry.payment_currency || "usd").toLowerCase();
+
+    // Capacity check (MVP: first-come-first-served; no waitlist)
+    const maxTeams = Number(category.max_teams ?? 0);
+    if (maxTeams && maxTeams > 0) {
+      const { data: acceptedRows, error: accErr } = await supabase
+        .from("entries")
+        .select("id")
+        .eq("category_id", category.id)
+        .eq("status", "accepted");
+      if (!accErr) {
+        const acceptedCount = (acceptedRows || []).length;
+        if (acceptedCount >= maxTeams) {
+          return new Response(JSON.stringify({ error: "Category is full" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
 
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecret) {
@@ -148,12 +169,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const stripe = new Stripe(stripeSecret, { apiVersion: "2022-11-15" });
 
     const defaultBase = Deno.env.get("CHECKOUT_BASE_URL") || req.headers.get("Origin") || "http://localhost:8082";
-    const successUrl = body.success_url || `${defaultBase}/tournaments/register?payment=success&entry_id=${entry.id}`;
-    const cancelUrl = body.cancel_url || `${defaultBase}/tournaments/register?payment=cancel`;
+    const successBase = body.success_url || `${defaultBase}/tournaments/my?payment=success`;
+    const cancelUrl = body.cancel_url || `${defaultBase}/tournaments/my?payment=cancel`;
+    const successUrl = `${successBase}${successBase.includes("?") ? "&" : "?"}entry_id=${entry.id}&session_id={CHECKOUT_SESSION_ID}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      success_url: `${successUrl}&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: successUrl,
       cancel_url: cancelUrl,
       line_items: [
         {

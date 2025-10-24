@@ -85,6 +85,11 @@ export default function HostTournaments() {
                   <Text className="text-xs text-gray-500">{t.status || "draft"}</Text>
                 </View>
                 <Text className="text-gray-600">Start: {fmt(t.start_date)}</Text>
+                <Link href={`/tournaments/${t.id}/categories`} asChild>
+                  <TouchableOpacity className="mt-3 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50">
+                    <Text className="text-gray-800 text-center">Manage Categories</Text>
+                  </TouchableOpacity>
+                </Link>
               </View>
             ))}
           </View>
