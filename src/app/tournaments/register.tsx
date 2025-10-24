@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useLocalSearchParams, router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,10 @@ export default function RegisterAndPay() {
   const { session } = useSession();
   const [categoryId, setCategoryId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const params = useLocalSearchParams<{ payment?: string; entry_id?: string; session_id?: string }>();
+  const [processing, setProcessing] = useState(false);
+  const [notice, setNotice] = useState<"success" | "warning" | null>(null);
+  const [noticeText, setNoticeText] = useState("");
 
   async function ensureEntry(userId: string, catId: number) {
     const { data: existing, error: selErr } = await supabase
@@ -36,6 +40,39 @@ export default function RegisterAndPay() {
 
     return entryId;
   }
+
+  useEffect(() => {
+    async function run() {
+      const pay = params.payment as string | undefined;
+      const eid = Number(params.entry_id ?? 0);
+      if (pay === "success" && eid) {
+        setProcessing(true);
+        setNotice(null);
+        for (let i = 0; i < 20; i++) {
+          const { data } = await supabase
+            .from("entries")
+            .select("payment_status,status")
+            .eq("id", eid)
+            .maybeSingle();
+          if (data?.payment_status === "paid") {
+            setNotice("success");
+            setNoticeText("Payment confirmed. Entry accepted.");
+            setProcessing(false);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 750));
+        }
+        setProcessing(false);
+        setNotice("warning");
+        setNoticeText("Payment processing delayed. Please refresh in a moment.");
+      } else if (pay === "cancel") {
+        setNotice("warning");
+        setNoticeText("Payment canceled. You can try again anytime.");
+      }
+    }
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.payment, params.entry_id]);
 
   async function onRegisterAndPay() {
     try {
@@ -76,6 +113,22 @@ export default function RegisterAndPay() {
       <Stack.Screen options={{ title: "Register & Pay" }} />
 
       <View className="px-4 mt-6">
+        {notice === "success" && (
+          <View className="mb-4 p-4 rounded-lg bg-green-50 border border-green-200">
+            <Text className="text-green-800 mb-2">{noticeText}</Text>
+            <TouchableOpacity
+              className="rounded-lg py-3 px-4 bg-green-600 active:bg-green-700"
+              onPress={() => router.push("/tournaments/my" as any)}
+            >
+              <Text className="text-white text-center font-semibold">View My Entries</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {notice === "warning" && (
+          <View className="mb-4 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+            <Text className="text-yellow-800">{noticeText}</Text>
+          </View>
+        )}
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <Text className="text-lg font-semibold text-gray-900 mb-6">Register for a Category</Text>
 
@@ -97,7 +150,7 @@ export default function RegisterAndPay() {
             disabled={submitting}
           >
             <Text className={`text-center font-semibold ${submitting ? "text-gray-500" : "text-white"}`}>
-              {submitting ? "Processing..." : "Register & Pay"}
+              {submitting || processing ? "Processing..." : "Register & Pay"}
             </Text>
           </TouchableOpacity>
         </View>
