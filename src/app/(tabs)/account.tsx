@@ -16,6 +16,7 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  Platform,
 } from "react-native";
 import { Stack } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
@@ -50,6 +51,8 @@ export default function Account() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [duprId, setDuprId] = useState("");
   const [duprRating, setDuprRating] = useState("");
+  const [notice, setNotice] = useState<"success" | "error" | null>(null);
+  const [noticeText, setNoticeText] = useState("");
 
   // Load user profile when session changes
   useEffect(() => {
@@ -144,10 +147,12 @@ export default function Account() {
         throw error;
       }
 
-      Alert.alert("Success", "Profile updated successfully!");
+      setNotice("success");
+      setNoticeText("Profile updated successfully!");
     } catch (error) {
       if (error instanceof Error) {
-        Alert.alert("Error updating profile", error.message);
+        setNotice("error");
+        setNoticeText(error.message);
       }
     } finally {
       setUpdating(false);
@@ -177,6 +182,18 @@ export default function Account() {
           </Text>
         </View>
       </View>
+
+      {notice && (
+        <View
+          className={
+            notice === "success"
+              ? "mx-4 mt-4 rounded-lg border border-green-200 bg-green-50 p-4"
+              : "mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 p-4"
+          }
+        >
+          <Text className={notice === "success" ? "text-green-800" : "text-red-800"}>{noticeText}</Text>
+        </View>
+      )}
 
       {/* User Info Card */}
       <View className="mx-4 mt-6 bg-white rounded-xl shadow-sm border border-gray-100">
@@ -306,14 +323,15 @@ export default function Account() {
           <TouchableOpacity
             className="bg-red-600 active:bg-red-700 rounded-lg py-4 px-6"
             onPress={() => {
-              Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Sign Out",
-                  style: "destructive",
-                  onPress: () => supabase.auth.signOut(),
-                },
-              ]);
+              if (Platform.OS === "web") {
+                const ok = typeof window !== "undefined" ? window.confirm("Are you sure you want to sign out?") : true;
+                if (ok) supabase.auth.signOut();
+              } else {
+                Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Sign Out", style: "destructive", onPress: () => supabase.auth.signOut() },
+                ]);
+              }
             }}
           >
             <Text className="text-white font-semibold text-center">
