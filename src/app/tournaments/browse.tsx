@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Stack, Link } from "expo-router";
+import { formatDateTimeLocal } from "@/utils/datetime";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -84,7 +85,7 @@ export default function BrowseTournaments() {
                 </View>
                 <Text className="text-xs text-gray-600 mt-1">
                   {t.registration_start_date && t.registration_end_date
-                    ? `Window: ${t.registration_start_date} → ${t.registration_end_date}`
+                    ? `Window: ${formatDateTimeLocal(t.registration_start_date)} → ${formatDateTimeLocal(t.registration_end_date)}`
                     : 'Registration window not set'}
                 </Text>
               </View>

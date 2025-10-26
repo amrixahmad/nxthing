@@ -4,6 +4,7 @@ import { Stack, Link, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { toDMY, toHM12, parseDMY, combineDateTime, parseTime12 } from "@/utils/datetime";
 
 export default function NewTournament() {
   const { session } = useSession();
@@ -11,9 +12,13 @@ export default function NewTournament() {
   const [title, setTitle] = useState("");
   const [venueName, setVenueName] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [regStart, setRegStart] = useState("");
+  const [regStartTime, setRegStartTime] = useState("");
   const [regEnd, setRegEnd] = useState("");
+  const [regEndTime, setRegEndTime] = useState("");
   const [format, setFormat] = useState<"single_elimination" | "double_elimination" | "round_robin">("single_elimination");
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,6 +30,18 @@ export default function NewTournament() {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"start" | "end" | "regStart" | "regEnd" | null>(null);
   const [pickerDate, setPickerDate] = useState<Date>(new Date());
+
+  // Time picker state (native)
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerTarget, setTimePickerTarget] = useState<"start" | "end" | "regStart" | "regEnd" | null>(null);
+  const [timePickerDate, setTimePickerDate] = useState<Date>(new Date());
+
+  // Time picker state (web)
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [timeTarget, setTimeTarget] = useState<"start" | "end" | "regStart" | "regEnd" | null>(null);
+  const [timeHour, setTimeHour] = useState<number>(9);
+  const [timeMinute, setTimeMinute] = useState<number>(0);
+  const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
 
   function parseISODate(v: string): Date | null {
     if (!v) return null;
@@ -38,13 +55,6 @@ export default function NewTournament() {
     return dt;
   }
 
-  function fmtISO(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
   function openCalendar(target: "start" | "end" | "regStart" | "regEnd") {
     setCalendarTarget(target);
     const v =
@@ -55,7 +65,7 @@ export default function NewTournament() {
         : target === "regStart"
         ? regStart
         : regEnd;
-    const dt = parseISODate(v) || new Date();
+    const dt = parseDMY(v) || parseISODate(v) || new Date();
     setCalYear(dt.getFullYear());
     setCalMonth(dt.getMonth());
     setCalendarOpen(true);
@@ -63,11 +73,11 @@ export default function NewTournament() {
 
   function selectCalendarDay(day: number) {
     const dt = new Date(calYear, calMonth, day);
-    const iso = fmtISO(dt);
-    if (calendarTarget === "start") setStartDate(iso);
-    if (calendarTarget === "end") setEndDate(iso);
-    if (calendarTarget === "regStart") setRegStart(iso);
-    if (calendarTarget === "regEnd") setRegEnd(iso);
+    const dmy = toDMY(dt);
+    if (calendarTarget === "start") setStartDate(dmy);
+    if (calendarTarget === "end") setEndDate(dmy);
+    if (calendarTarget === "regStart") setRegStart(dmy);
+    if (calendarTarget === "regEnd") setRegEnd(dmy);
     setCalendarOpen(false);
   }
 
@@ -98,7 +108,7 @@ export default function NewTournament() {
         : target === "regStart"
         ? regStart
         : regEnd;
-    const dt = parseISODate(v) || new Date();
+    const dt = parseDMY(v) || parseISODate(v) || new Date();
     setPickerDate(dt);
     setShowPicker(true);
   }
@@ -109,21 +119,100 @@ export default function NewTournament() {
       return;
     }
     if (date && pickerTarget) {
-      const iso = fmtISO(date);
-      if (pickerTarget === "start") setStartDate(iso);
-      if (pickerTarget === "end") setEndDate(iso);
-      if (pickerTarget === "regStart") setRegStart(iso);
-      if (pickerTarget === "regEnd") setRegEnd(iso);
+      const dmy = toDMY(date);
+      if (pickerTarget === "start") setStartDate(dmy);
+      if (pickerTarget === "end") setEndDate(dmy);
+      if (pickerTarget === "regStart") setRegStart(dmy);
+      if (pickerTarget === "regEnd") setRegEnd(dmy);
     }
     setShowPicker(false);
+  }
+
+  function handleTimePick(target: "start" | "end" | "regStart" | "regEnd") {
+    if (Platform.OS === "web") {
+      // Open simple web time modal
+      setTimeTarget(target);
+      const v = target === "start" ? startTime : target === "end" ? endTime : target === "regStart" ? regStartTime : regEndTime;
+      const parsed = parseTime12(v || "");
+      if (parsed) {
+        let h12 = parsed.hours24 % 12;
+        if (h12 === 0) h12 = 12;
+        setTimeHour(h12);
+        setTimeAmPm(parsed.hours24 < 12 ? "AM" : "PM");
+        setTimeMinute(parsed.minutes);
+      } else {
+        const now = new Date();
+        let h = now.getHours();
+        let h12 = h % 12;
+        if (h12 === 0) h12 = 12;
+        setTimeHour(h12);
+        setTimeAmPm(h < 12 ? "AM" : "PM");
+        setTimeMinute(now.getMinutes() - (now.getMinutes() % 5));
+      }
+      setTimeOpen(true);
+      return;
+    }
+    // Native
+    setTimePickerTarget(target);
+    const v = target === "start" ? startTime : target === "end" ? endTime : target === "regStart" ? regStartTime : regEndTime;
+    const base = new Date();
+    const parsed = parseTime12(v || "");
+    if (parsed) base.setHours(parsed.hours24, parsed.minutes, 0, 0);
+    setTimePickerDate(base);
+    setShowTimePicker(true);
+  }
+
+  function onNativeTimeChange(event: DateTimePickerEvent, date?: Date) {
+    if (event.type === "dismissed") {
+      setShowTimePicker(false);
+      return;
+    }
+    if (date && timePickerTarget) {
+      const val = toHM12(date);
+      if (timePickerTarget === "start") setStartTime(val);
+      if (timePickerTarget === "end") setEndTime(val);
+      if (timePickerTarget === "regStart") setRegStartTime(val);
+      if (timePickerTarget === "regEnd") setRegEndTime(val);
+    }
+    setShowTimePicker(false);
+  }
+
+  function confirmWebTime() {
+    const hh = String(timeHour);
+    const mm = String(timeMinute).padStart(2, "0");
+    const val = `${hh}:${mm} ${timeAmPm}`;
+    if (timeTarget === "start") setStartTime(val);
+    if (timeTarget === "end") setEndTime(val);
+    if (timeTarget === "regStart") setRegStartTime(val);
+    if (timeTarget === "regEnd") setRegEndTime(val);
+    setTimeOpen(false);
   }
 
   async function createTournament() {
     try {
       if (!session?.user) return;
-      if (!title || !startDate || !regStart || !regEnd) {
-        Alert.alert("Missing info", "Title, registration dates and start date are required");
+      if (!title || !startDate || !startTime || !regStart || !regStartTime || !regEnd || !regEndTime) {
+        Alert.alert("Missing info", "Title, start date/time and registration dates/times are required");
         return;
+      }
+      const startDT = combineDateTime(startDate, startTime);
+      const regStartDT = combineDateTime(regStart, regStartTime);
+      const regEndDT = combineDateTime(regEnd, regEndTime);
+      if (!startDT || !regStartDT || !regEndDT) {
+        Alert.alert("Invalid dates", "Please check date/time formats (dd/mm/yyyy and h:mm AM/PM)");
+        return;
+      }
+      let endDT: Date | null = null;
+      if (endDate || endTime) {
+        if (!endDate || !endTime) {
+          Alert.alert("Invalid end", "Please provide both end date and end time or leave both empty");
+          return;
+        }
+        endDT = combineDateTime(endDate, endTime);
+        if (!endDT) {
+          Alert.alert("Invalid end", "Please check end date/time format");
+          return;
+        }
       }
       setSubmitting(true);
       const { error } = await supabase
@@ -132,10 +221,10 @@ export default function NewTournament() {
           organizer_id: session.user.id,
           title,
           venue_name: venueName || null,
-          start_date: startDate,
-          end_date: endDate || null,
-          registration_start_date: regStart,
-          registration_end_date: regEnd,
+          start_date: startDT.toISOString(),
+          end_date: endDT ? endDT.toISOString() : null,
+          registration_start_date: regStartDT.toISOString(),
+          registration_end_date: regEndDT.toISOString(),
           status: "draft",
           format,
         });
@@ -179,13 +268,13 @@ export default function NewTournament() {
           </View>
 
           <View className="mb-4">
-            <Text className="text-base font-medium text-gray-700 mb-2">Start Date</Text>
+            <Text className="text-base font-medium text-gray-700 mb-2">Start date (dd/mm/yyyy)</Text>
             <View className="flex-row items-center">
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={startDate}
                 onChangeText={setStartDate}
-                placeholder="YYYY-MM-DD"
+                placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
@@ -193,16 +282,32 @@ export default function NewTournament() {
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
+            <View className="mt-3">
+              <Text className="text-base font-medium text-gray-700 mb-2">Start time (h:mm AM/PM)</Text>
+              <View className="flex-row items-center">
+                <TextInput
+                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  value={startTime}
+                  onChangeText={setStartTime}
+                  placeholder="h:mm AM/PM"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("start")}>
+                  <Text className="text-gray-800">Pick</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View className="mb-4">
-            <Text className="text-base font-medium text-gray-700 mb-2">End Date (optional)</Text>
+            <Text className="text-base font-medium text-gray-700 mb-2">End date (optional, dd/mm/yyyy)</Text>
             <View className="flex-row items-center">
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={endDate}
                 onChangeText={setEndDate}
-                placeholder="YYYY-MM-DD"
+                placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
@@ -210,16 +315,32 @@ export default function NewTournament() {
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
+            <View className="mt-3">
+              <Text className="text-base font-medium text-gray-700 mb-2">End time (optional, h:mm AM/PM)</Text>
+              <View className="flex-row items-center">
+                <TextInput
+                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  value={endTime}
+                  onChangeText={setEndTime}
+                  placeholder="h:mm AM/PM"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("end")}>
+                  <Text className="text-gray-800">Pick</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View className="mb-4">
-            <Text className="text-base font-medium text-gray-700 mb-2">Registration Start</Text>
+            <Text className="text-base font-medium text-gray-700 mb-2">Registration start (dd/mm/yyyy)</Text>
             <View className="flex-row items-center">
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={regStart}
                 onChangeText={setRegStart}
-                placeholder="YYYY-MM-DD"
+                placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
@@ -227,22 +348,54 @@ export default function NewTournament() {
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
+            <View className="mt-3">
+              <Text className="text-base font-medium text-gray-700 mb-2">Registration start time (h:mm AM/PM)</Text>
+              <View className="flex-row items-center">
+                <TextInput
+                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  value={regStartTime}
+                  onChangeText={setRegStartTime}
+                  placeholder="h:mm AM/PM"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regStart")}>
+                  <Text className="text-gray-800">Pick</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View className="mb-6">
-            <Text className="text-base font-medium text-gray-700 mb-2">Registration End</Text>
+            <Text className="text-base font-medium text-gray-700 mb-2">Registration end (dd/mm/yyyy)</Text>
             <View className="flex-row items-center">
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={regEnd}
                 onChangeText={setRegEnd}
-                placeholder="YYYY-MM-DD"
+                placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
               <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handlePick("regEnd")}>
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
+            </View>
+            <View className="mt-3">
+              <Text className="text-base font-medium text-gray-700 mb-2">Registration end time (h:mm AM/PM)</Text>
+              <View className="flex-row items-center">
+                <TextInput
+                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  value={regEndTime}
+                  onChangeText={setRegEndTime}
+                  placeholder="h:mm AM/PM"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regEnd")}>
+                  <Text className="text-gray-800">Pick</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -338,6 +491,80 @@ export default function NewTournament() {
           display="default"
           onChange={onNativeChange}
         />
+      )}
+
+      {showTimePicker && Platform.OS !== "web" && (
+        <DateTimePicker
+          value={timePickerDate}
+          mode="time"
+          display="default"
+          onChange={onNativeTimeChange}
+        />
+      )}
+
+      {timeOpen && Platform.OS === "web" && (
+        <Modal visible={timeOpen} transparent animationType="fade" onRequestClose={() => setTimeOpen(false)}>
+          <View className="flex-1 bg-black/40 items-center justify-center px-4">
+            <View className="w-full max-w-sm bg-white rounded-xl p-4">
+              <Text className="text-lg font-semibold mb-3">Pick time</Text>
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">Hours</Text>
+                  <View className="flex-row items-center">
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h % 12) + 1)}>
+                      <Text>＋</Text>
+                    </TouchableOpacity>
+                    <Text className="mx-3 text-base">{String(timeHour).padStart(2, "0")}</Text>
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h - 2 + 12) % 12 + 1)}>
+                      <Text>－</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">Minutes</Text>
+                  <View className="flex-row items-center">
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m + 5) % 60)}>
+                      <Text>＋</Text>
+                    </TouchableOpacity>
+                    <Text className="mx-3 text-base">{String(timeMinute).padStart(2, "0")}</Text>
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m - 5 + 60) % 60)}>
+                      <Text>－</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">AM/PM</Text>
+                  <View className="flex-row">
+                    <TouchableOpacity className={`px-3 py-2 rounded-l-lg border ${timeAmPm === "AM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`} onPress={() => setTimeAmPm("AM")}>
+                      <Text className={timeAmPm === "AM" ? "text-white" : "text-gray-700"}>AM</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity className={`px-3 py-2 rounded-r-lg border ${timeAmPm === "PM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`} onPress={() => setTimeAmPm("PM")}>
+                      <Text className={timeAmPm === "PM" ? "text-white" : "text-gray-700"}>PM</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+              <View className="flex-row justify-between">
+                <TouchableOpacity className="px-4 py-3 rounded-lg border border-gray-300" onPress={() => {
+                  const now = new Date();
+                  let h = now.getHours();
+                  let h12 = h % 12; if (h12 === 0) h12 = 12;
+                  setTimeHour(h12); setTimeAmPm(h < 12 ? "AM" : "PM"); setTimeMinute(now.getMinutes() - (now.getMinutes()%5));
+                }}>
+                  <Text className="text-gray-700">Now</Text>
+                </TouchableOpacity>
+                <View className="flex-row">
+                  <TouchableOpacity className="mr-2 px-4 py-3 rounded-lg border border-gray-300" onPress={() => setTimeOpen(false)}>
+                    <Text className="text-gray-700">Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="px-4 py-3 rounded-lg bg-blue-600" onPress={confirmWebTime}>
+                    <Text className="text-white font-semibold">Set Time</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
       )}
     </ScrollView>
   );

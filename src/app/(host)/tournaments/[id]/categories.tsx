@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
+import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/utils/datetime";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, router, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -37,7 +39,21 @@ export default function ManageCategories() {
   const [maxTeams, setMaxTeams] = useState("16");
 
   const [regStart, setRegStart] = useState("");
+  const [regStartTime, setRegStartTime] = useState("");
   const [regEnd, setRegEnd] = useState("");
+  const [regEndTime, setRegEndTime] = useState("");
+
+  // Time picker state (native)
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerTarget, setTimePickerTarget] = useState<"regStart" | "regEnd" | null>(null);
+  const [timePickerDate, setTimePickerDate] = useState<Date>(new Date());
+
+  // Time picker state (web)
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [timeTarget, setTimeTarget] = useState<"regStart" | "regEnd" | null>(null);
+  const [timeHour, setTimeHour] = useState<number>(9);
+  const [timeMinute, setTimeMinute] = useState<number>(0);
+  const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
 
   const templates = useMemo(
     () => [
@@ -59,8 +75,22 @@ export default function ManageCategories() {
       .maybeSingle();
     const tt = (t as any) || null;
     setTournament(tt);
-    setRegStart(tt?.registration_start_date || "");
-    setRegEnd(tt?.registration_end_date || "");
+    if (tt?.registration_start_date) {
+      const ds = new Date(tt.registration_start_date);
+      setRegStart(toDMY(ds));
+      setRegStartTime(toHM12(ds));
+    } else {
+      setRegStart("");
+      setRegStartTime("");
+    }
+    if (tt?.registration_end_date) {
+      const de = new Date(tt.registration_end_date);
+      setRegEnd(toDMY(de));
+      setRegEndTime(toHM12(de));
+    } else {
+      setRegEnd("");
+      setRegEndTime("");
+    }
 
     const { data: cats } = await supabase
       .from("tournament_categories")
@@ -130,13 +160,13 @@ export default function ManageCategories() {
         return;
       }
       if (open) {
-        if (!regStart || !regEnd) {
+        if (!regStart || !regEnd || !regStartTime || !regEndTime) {
           Alert.alert("Set registration window first");
           return;
         }
-        const s = new Date(regStart);
-        const e = new Date(regEnd);
-        if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+        const sdt = combineDateTime(regStart, regStartTime);
+        const edt = combineDateTime(regEnd, regEndTime);
+        if (!sdt || !edt || sdt > edt) {
           Alert.alert("Invalid window", "Start must be before end");
           return;
         }
@@ -158,20 +188,20 @@ export default function ManageCategories() {
   async function saveWindow() {
     try {
       if (!tournament) return;
-      if (!regStart || !regEnd) {
+      if (!regStart || !regEnd || !regStartTime || !regEndTime) {
         Alert.alert("Start and end are required");
         return;
       }
-      const s = new Date(regStart);
-      const e = new Date(regEnd);
-      if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+      const sdt = combineDateTime(regStart, regStartTime);
+      const edt = combineDateTime(regEnd, regEndTime);
+      if (!sdt || !edt || sdt > edt) {
         Alert.alert("Invalid window", "Start must be before end");
         return;
       }
       setSaving(true);
       const { error } = await supabase
         .from("tournaments")
-        .update({ registration_start_date: regStart, registration_end_date: regEnd })
+        .update({ registration_start_date: sdt.toISOString(), registration_end_date: edt.toISOString() })
         .eq("id", tid);
       if (error) throw error;
       await load();
@@ -189,18 +219,18 @@ export default function ManageCategories() {
         Alert.alert("Add at least one category first");
         return;
       }
-      const today = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const todayISO = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-      const endISO = tournament.start_date || todayISO;
-      setRegStart(todayISO);
-      setRegEnd(endISO);
+      const now = new Date();
+      const endBaseline = tournament.start_date ? new Date(tournament.start_date) : now;
+      setRegStart(toDMY(now));
+      setRegStartTime(toHM12(now));
+      setRegEnd(toDMY(endBaseline));
+      setRegEndTime(toHM12(endBaseline));
       setSaving(true);
       const { error } = await supabase
         .from("tournaments")
         .update({
-          registration_start_date: todayISO,
-          registration_end_date: endISO,
+          registration_start_date: now.toISOString(),
+          registration_end_date: endBaseline.toISOString(),
           status: "registration_open",
         })
         .eq("id", tid);
@@ -235,6 +265,79 @@ export default function ManageCategories() {
               </TouchableOpacity>
             ))}
           </View>
+
+        {showTimePicker && Platform.OS !== "web" && (
+          <DateTimePicker
+            value={timePickerDate}
+            mode="time"
+            display="default"
+            onChange={onNativeTimeChange}
+          />
+        )}
+
+        {timeOpen && Platform.OS === "web" && (
+          <Modal visible={timeOpen} transparent animationType="fade" onRequestClose={() => setTimeOpen(false)}>
+            <View className="flex-1 bg-black/40 items-center justify-center px-4">
+              <View className="w-full max-w-sm bg-white rounded-xl p-4">
+                <Text className="text-lg font-semibold mb-3">Pick time</Text>
+                <View className="flex-row items-center justify-between mb-3">
+                  <View className="items-center">
+                    <Text className="text-xs text-gray-500 mb-1">Hours</Text>
+                    <View className="flex-row items-center">
+                      <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h % 12) + 1)}>
+                        <Text>＋</Text>
+                      </TouchableOpacity>
+                      <Text className="mx-3 text-base">{String(timeHour).padStart(2, "0")}</Text>
+                      <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h - 2 + 12) % 12 + 1)}>
+                        <Text>－</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View className="items-center">
+                    <Text className="text-xs text-gray-500 mb-1">Minutes</Text>
+                    <View className="flex-row items-center">
+                      <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m + 5) % 60)}>
+                        <Text>＋</Text>
+                      </TouchableOpacity>
+                      <Text className="mx-3 text-base">{String(timeMinute).padStart(2, "0")}</Text>
+                      <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m - 5 + 60) % 60)}>
+                        <Text>－</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View className="items-center">
+                    <Text className="text-xs text-gray-500 mb-1">AM/PM</Text>
+                    <View className="flex-row">
+                      <TouchableOpacity className={`px-3 py-2 rounded-l-lg border ${timeAmPm === "AM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`} onPress={() => setTimeAmPm("AM")}>
+                        <Text className={timeAmPm === "AM" ? "text-white" : "text-gray-700"}>AM</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity className={`px-3 py-2 rounded-r-lg border ${timeAmPm === "PM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`} onPress={() => setTimeAmPm("PM")}>
+                        <Text className={timeAmPm === "PM" ? "text-white" : "text-gray-700"}>PM</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+                <View className="flex-row justify-between">
+                  <TouchableOpacity className="px-4 py-3 rounded-lg border border-gray-300" onPress={() => {
+                    const now = new Date();
+                    let h = now.getHours(); let h12 = h % 12; if (h12 === 0) h12 = 12;
+                    setTimeHour(h12); setTimeAmPm(h < 12 ? "AM" : "PM"); setTimeMinute(now.getMinutes() - (now.getMinutes()%5));
+                  }}>
+                    <Text className="text-gray-700">Now</Text>
+                  </TouchableOpacity>
+                  <View className="flex-row">
+                    <TouchableOpacity className="mr-2 px-4 py-3 rounded-lg border border-gray-300" onPress={() => setTimeOpen(false)}>
+                      <Text className="text-gray-700">Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity className="px-4 py-3 rounded-lg bg-blue-600" onPress={confirmWebTime}>
+                      <Text className="text-white font-semibold">Set Time</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
 
           <View className="mb-3">
             <Text className="text-sm text-gray-700 mb-1">Name</Text>
@@ -314,26 +417,54 @@ export default function ManageCategories() {
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-4">
           <Text className="text-base font-semibold text-gray-900 mb-2">Registration Window</Text>
           <View className="mb-3">
-            <Text className="text-sm text-gray-700 mb-1">Start (YYYY-MM-DD)</Text>
+            <Text className="text-sm text-gray-700 mb-1">Start date (dd/mm/yyyy)</Text>
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               value={regStart}
               onChangeText={setRegStart}
-              placeholder="YYYY-MM-DD"
+              placeholder="dd/mm/yyyy"
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
             />
+            <Text className="text-sm text-gray-700 mb-1 mt-3">Start time (h:mm AM/PM)</Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
+                value={regStartTime}
+                onChangeText={setRegStartTime}
+                placeholder="h:mm AM/PM"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regStart")}>
+                <Text className="text-gray-800">Pick</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View className="mb-4">
-            <Text className="text-sm text-gray-700 mb-1">End (YYYY-MM-DD)</Text>
+            <Text className="text-sm text-gray-700 mb-1">End date (dd/mm/yyyy)</Text>
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               value={regEnd}
               onChangeText={setRegEnd}
-              placeholder="YYYY-MM-DD"
+              placeholder="dd/mm/yyyy"
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
             />
+            <Text className="text-sm text-gray-700 mb-1 mt-3">End time (h:mm AM/PM)</Text>
+            <View className="flex-row items-center">
+              <TextInput
+                className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white flex-1"
+                value={regEndTime}
+                onChangeText={setRegEndTime}
+                placeholder="h:mm AM/PM"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regEnd")}>
+                <Text className="text-gray-800">Pick</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View className="flex-row space-x-2">
             <TouchableOpacity

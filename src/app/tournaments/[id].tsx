@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
+import { formatDateTimeLocal } from "@/utils/datetime";
 
 type Cat = { id: number; name?: string | null; registration_fee?: number | null };
 
@@ -148,7 +149,7 @@ export default function TournamentDetails() {
               <Text className="text-sm text-gray-700 mt-1">{tour.venue_name}</Text>
             ) : null}
             <Text className="text-xs text-gray-600 mt-1">
-              {tour.start_date ? `Starts ${tour.start_date}` : ""}
+              {tour.start_date ? `Starts ${formatDateTimeLocal(tour.start_date)}` : ""}
             </Text>
             <View className="mt-3">
               <View className={`self-start px-2 py-1 rounded ${isOpen ? "bg-green-100" : "bg-gray-100"}`}>
@@ -158,7 +159,7 @@ export default function TournamentDetails() {
               </View>
               <Text className="text-xs text-gray-600 mt-1">
                 {tour.registration_start_date && tour.registration_end_date
-                  ? `Window: ${tour.registration_start_date} → ${tour.registration_end_date}`
+                  ? `Window: ${formatDateTimeLocal(tour.registration_start_date)} → ${formatDateTimeLocal(tour.registration_end_date)}`
                   : "Registration window not set"}
               </Text>
             </View>

@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { startCheckout } from "@/utils/checkout";
+import { formatDateTimeLocal } from "@/utils/datetime";
 
 type EntryRow = {
   id: number;
@@ -194,7 +195,7 @@ export default function MyEntries() {
                     <Text className={`text-xs ${isOpen ? "text-green-800" : "text-gray-800"}`}>{isOpen ? "Registration Open" : "Registration Closed"}</Text>
                   </View>
                   {t?.registration_start_date && t?.registration_end_date ? (
-                    <Text className="text-xs text-gray-600 ml-2">{t.registration_start_date} → {t.registration_end_date}</Text>
+                    <Text className="text-xs text-gray-600 ml-2">{formatDateTimeLocal(t.registration_start_date)} → {formatDateTimeLocal(t.registration_end_date)}</Text>
                   ) : null}
                 </View>
                 <View className="flex-row mt-3">
