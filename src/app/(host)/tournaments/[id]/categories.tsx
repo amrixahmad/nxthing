@@ -16,6 +16,9 @@ type Tournament = {
   id: number;
   title: string | null;
   status: string | null;
+  start_date?: string | null;
+  registration_start_date?: string | null;
+  registration_end_date?: string | null;
 };
 
 export default function ManageCategories() {
@@ -33,6 +36,9 @@ export default function ManageCategories() {
   const [fee, setFee] = useState("0");
   const [maxTeams, setMaxTeams] = useState("16");
 
+  const [regStart, setRegStart] = useState("");
+  const [regEnd, setRegEnd] = useState("");
+
   const templates = useMemo(
     () => [
       { label: "Men's Singles", p: "singles" as const, n: "Men's Singles", teamMin: 1, teamMax: 1 },
@@ -48,10 +54,13 @@ export default function ManageCategories() {
     setLoading(true);
     const { data: t } = await supabase
       .from("tournaments")
-      .select("id,title,status")
+      .select("id,title,status,start_date,registration_start_date,registration_end_date")
       .eq("id", tid)
       .maybeSingle();
-    setTournament((t as any) || null);
+    const tt = (t as any) || null;
+    setTournament(tt);
+    setRegStart(tt?.registration_start_date || "");
+    setRegEnd(tt?.registration_end_date || "");
 
     const { data: cats } = await supabase
       .from("tournament_categories")
@@ -120,10 +129,80 @@ export default function ManageCategories() {
         Alert.alert("Add at least one category before opening registration");
         return;
       }
+      if (open) {
+        if (!regStart || !regEnd) {
+          Alert.alert("Set registration window first");
+          return;
+        }
+        const s = new Date(regStart);
+        const e = new Date(regEnd);
+        if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+          Alert.alert("Invalid window", "Start must be before end");
+          return;
+        }
+      }
       setSaving(true);
       const { error } = await supabase
         .from("tournaments")
         .update({ status: open ? "registration_open" : "draft" })
+        .eq("id", tid);
+      if (error) throw error;
+      await load();
+    } catch (e) {
+      if (e instanceof Error) Alert.alert("Error", e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveWindow() {
+    try {
+      if (!tournament) return;
+      if (!regStart || !regEnd) {
+        Alert.alert("Start and end are required");
+        return;
+      }
+      const s = new Date(regStart);
+      const e = new Date(regEnd);
+      if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+        Alert.alert("Invalid window", "Start must be before end");
+        return;
+      }
+      setSaving(true);
+      const { error } = await supabase
+        .from("tournaments")
+        .update({ registration_start_date: regStart, registration_end_date: regEnd })
+        .eq("id", tid);
+      if (error) throw error;
+      await load();
+    } catch (e) {
+      if (e instanceof Error) Alert.alert("Error", e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openNowUntilStart() {
+    try {
+      if (!tournament) return;
+      if (items.length === 0) {
+        Alert.alert("Add at least one category first");
+        return;
+      }
+      const today = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const todayISO = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      const endISO = tournament.start_date || todayISO;
+      setRegStart(todayISO);
+      setRegEnd(endISO);
+      setSaving(true);
+      const { error } = await supabase
+        .from("tournaments")
+        .update({
+          registration_start_date: todayISO,
+          registration_end_date: endISO,
+          status: "registration_open",
+        })
         .eq("id", tid);
       if (error) throw error;
       await load();
@@ -230,6 +309,48 @@ export default function ManageCategories() {
               </View>
             ))
           )}
+        </View>
+
+        <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-4">
+          <Text className="text-base font-semibold text-gray-900 mb-2">Registration Window</Text>
+          <View className="mb-3">
+            <Text className="text-sm text-gray-700 mb-1">Start (YYYY-MM-DD)</Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
+              value={regStart}
+              onChangeText={setRegStart}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+            />
+          </View>
+          <View className="mb-4">
+            <Text className="text-sm text-gray-700 mb-1">End (YYYY-MM-DD)</Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
+              value={regEnd}
+              onChangeText={setRegEnd}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+            />
+          </View>
+          <View className="flex-row space-x-2">
+            <TouchableOpacity
+              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+              onPress={saveWindow}
+              disabled={saving}
+            >
+              <Text className={`text-center font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Save Window</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
+              onPress={openNowUntilStart}
+              disabled={saving}
+            >
+              <Text className={`text-center font-semibold ${saving ? "text-gray-300" : "text-white"}`}>Open Now Until Start Date</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">

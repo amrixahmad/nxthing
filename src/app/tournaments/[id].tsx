@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+import { registerThenCheckout, startCheckout } from "@/utils/checkout";
 
 type Cat = { id: number; name?: string | null; registration_fee?: number | null };
 
@@ -27,6 +27,17 @@ export default function TournamentDetails() {
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<Record<number, { id: number; payment_status: string }>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<"error" | null>(null);
+  const [noticeText, setNoticeText] = useState("");
+  const isOpen = (() => {
+    if (!tour) return false;
+    if (tour.status !== "registration_open") return false;
+    if (!tour.registration_start_date || !tour.registration_end_date) return false;
+    const now = new Date();
+    const s = new Date(tour.registration_start_date);
+    const e = new Date(tour.registration_end_date);
+    return now >= s && now <= e;
+  })();
 
   async function load() {
     setLoading(true);
@@ -79,51 +90,20 @@ export default function TournamentDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tid, session?.user?.id]);
 
-  async function ensureEntry(userId: string, categoryId: number) {
-    const { data: existing } = await supabase
-      .from("entries")
-      .select("id, payment_status")
-      .eq("category_id", categoryId)
-      .eq("created_by", userId)
-      .limit(1)
-      .maybeSingle();
-    if (existing) return existing.id as number;
-    // try insert; if unique violation happens due to race, read back
-    const { data: ins, error: insErr } = await supabase
-      .from("entries")
-      .insert({ category_id: categoryId, created_by: userId, payment_currency: "usd", status: "pending" })
-      .select("id")
-      .single();
-    if (insErr) {
-      // re-read
-      const { data: after } = await supabase
-        .from("entries")
-        .select("id")
-        .eq("category_id", categoryId)
-        .eq("created_by", userId)
-        .limit(1)
-        .maybeSingle();
-      if (after?.id) return after.id as number;
-      throw insErr;
-    }
-    const entryId = (ins as any).id as number;
-    await supabase.from("entry_members").insert({ entry_id: entryId, profile_id: userId });
-    return entryId;
-  }
-
   async function register(categoryId: number) {
     if (!session?.user) return;
     try {
       setBusyKey(`c-${categoryId}`);
-      const entryId = await ensureEntry(session.user.id, categoryId);
-      const { data, error } = await supabase.functions.invoke("stripe-checkout", {
-        body: { entry_id: entryId },
-      });
-      if (error) throw error;
-      const url = (data as any)?.url as string | undefined;
-      if (!url) throw new Error("No checkout URL returned");
-      if (Platform.OS === "web") window.location.href = url;
-      else await WebBrowser.openBrowserAsync(url);
+      setNotice(null);
+      if (!isOpen) {
+        setNotice("error");
+        setNoticeText("Registration is closed for this tournament.");
+        return;
+      }
+      await registerThenCheckout(session.user.id, categoryId);
+    } catch (e: any) {
+      setNotice("error");
+      setNoticeText(e?.message || "Registration failed");
     } finally {
       setBusyKey(null);
     }
@@ -132,14 +112,16 @@ export default function TournamentDetails() {
   async function payEntry(entryId: number) {
     try {
       setBusyKey(`e-${entryId}`);
-      const { data, error } = await supabase.functions.invoke("stripe-checkout", {
-        body: { entry_id: entryId },
-      });
-      if (error) throw error;
-      const url = (data as any)?.url as string | undefined;
-      if (!url) throw new Error("No checkout URL returned");
-      if (Platform.OS === "web") window.location.href = url;
-      else await WebBrowser.openBrowserAsync(url);
+      setNotice(null);
+      if (!isOpen) {
+        setNotice("error");
+        setNoticeText("Registration is closed for this tournament.");
+        return;
+      }
+      await startCheckout(entryId);
+    } catch (e: any) {
+      setNotice("error");
+      setNoticeText(e?.message || "Payment failed");
     } finally {
       setBusyKey(null);
     }
@@ -150,6 +132,11 @@ export default function TournamentDetails() {
       <Stack.Screen options={{ title: tour?.title || `Tournament #${tid}` }} />
 
       <View className="px-4 mt-6">
+        {notice && (
+          <View className="mb-3 p-4 rounded-lg bg-red-50 border border-red-200">
+            <Text className="text-red-800">{noticeText}</Text>
+          </View>
+        )}
         {loading || !tour ? (
           <View className="items-center justify-center py-10">
             <ActivityIndicator />
@@ -163,6 +150,18 @@ export default function TournamentDetails() {
             <Text className="text-xs text-gray-600 mt-1">
               {tour.start_date ? `Starts ${tour.start_date}` : ""}
             </Text>
+            <View className="mt-3">
+              <View className={`self-start px-2 py-1 rounded ${isOpen ? "bg-green-100" : "bg-gray-100"}`}>
+                <Text className={`text-xs ${isOpen ? "text-green-800" : "text-gray-800"}`}>
+                  {isOpen ? "Registration Open" : tour.status === "registration_open" ? "Registration Window Closed" : "Registration Closed"}
+                </Text>
+              </View>
+              <Text className="text-xs text-gray-600 mt-1">
+                {tour.registration_start_date && tour.registration_end_date
+                  ? `Window: ${tour.registration_start_date} → ${tour.registration_end_date}`
+                  : "Registration window not set"}
+              </Text>
+            </View>
 
             <Text className="text-sm font-medium text-gray-900 mt-4">Categories</Text>
             {tour.categories.length === 0 ? (
@@ -175,16 +174,16 @@ export default function TournamentDetails() {
                   <View key={c.id} className="flex-row items-center justify-between mt-3">
                     <View>
                       <Text className="text-sm text-gray-800">{c.name || `Category #${c.id}`}</Text>
-                      <Text className="text-xs text-gray-600">USD {(c.registration_fee ?? 0).toFixed(2)}</Text>
+                      <Text className="text-xs text-gray-600">USD {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
                     </View>
                     {meta ? (
                       meta.payment_status === "unpaid" ? (
                         <TouchableOpacity
-                          className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                          className={`rounded-lg py-2 px-4 ${isBusy || !isOpen ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                           onPress={() => payEntry(meta.id)}
-                          disabled={isBusy}
+                          disabled={isBusy || !isOpen}
                         >
-                          <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>Pay</Text>
+                          <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>{isOpen ? "Pay" : "Closed"}</Text>
                         </TouchableOpacity>
                       ) : (
                         <View className="px-3 py-2 rounded-lg bg-green-100">
@@ -193,11 +192,11 @@ export default function TournamentDetails() {
                       )
                     ) : (
                       <TouchableOpacity
-                        className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                        className={`rounded-lg py-2 px-4 ${isBusy || !isOpen ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                         onPress={() => register(c.id)}
-                        disabled={isBusy}
+                        disabled={isBusy || !isOpen}
                       >
-                        <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>Register</Text>
+                        <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>{isOpen ? "Register" : "Closed"}</Text>
                       </TouchableOpacity>
                     )}
                   </View>

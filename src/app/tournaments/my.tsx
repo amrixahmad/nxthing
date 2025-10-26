@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from "react-native";
-import { Stack } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+import { startCheckout } from "@/utils/checkout";
 
 type EntryRow = {
   id: number;
@@ -14,15 +14,25 @@ type EntryRow = {
   category: {
     id: number;
     name?: string | null;
-    tournament?: { id: number; title?: string | null } | null;
+    tournament?: {
+      id: number;
+      title?: string | null;
+      status?: string | null;
+      registration_start_date?: string | null;
+      registration_end_date?: string | null;
+    } | null;
   } | null;
 };
 
 export default function MyEntries() {
   const { session } = useSession();
+  const params = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [invoking, setInvoking] = useState<number | null>(null);
+  const [notice, setNotice] = useState<"success" | "warning" | "error" | null>(null);
+  const [noticeText, setNoticeText] = useState("");
+  const [highlightId, setHighlightId] = useState<number | null>(null);
 
   async function load() {
     if (!session?.user) return;
@@ -31,7 +41,7 @@ export default function MyEntries() {
       .from("entries")
       .select(
         `id, status, payment_status, payment_amount, payment_currency,
-         category:category_id ( id, name, tournament:tournament_id ( id, title ) )`
+         category:category_id ( id, name, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
       )
       .eq("created_by", session.user.id)
       .order("created_at", { ascending: false });
@@ -50,7 +60,15 @@ export default function MyEntries() {
             ? {
                 id: cat.id,
                 name: cat.name ?? null,
-                tournament: tour ? { id: tour.id, title: tour.title ?? null } : null,
+                tournament: tour
+                  ? {
+                      id: tour.id,
+                      title: tour.title ?? null,
+                      status: tour.status ?? null,
+                      registration_start_date: tour.registration_start_date ?? null,
+                      registration_end_date: tour.registration_end_date ?? null,
+                    }
+                  : null,
               }
             : null,
         } as EntryRow;
@@ -65,23 +83,44 @@ export default function MyEntries() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
+  // After returning from Stripe, poll for paid status and refresh list
+  useEffect(() => {
+    async function run() {
+      const pay = params.payment as string | undefined;
+      const eid = Number(params.entry_id ?? 0);
+      if (pay === "success" && eid) {
+        setNotice(null);
+        for (let i = 0; i < 20; i++) {
+          const { data } = await supabase
+            .from("entries")
+            .select("payment_status,status")
+            .eq("id", eid)
+            .maybeSingle();
+          if (data?.payment_status === "paid") {
+            setNotice("success");
+            setNoticeText("Payment confirmed. Entry accepted.");
+            setHighlightId(eid);
+            await load();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 750));
+        }
+        setNotice("warning");
+        setNoticeText("Payment processing delayed. Please refresh in a moment.");
+      }
+    }
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.payment, params.entry_id]);
+
   async function pay(entryId: number) {
     try {
       setInvoking(entryId);
-      const { data, error } = await supabase.functions.invoke("stripe-checkout", {
-        body: { entry_id: entryId },
-      });
-      if (error) throw error;
-      const url = (data as any)?.url as string | undefined;
-      if (!url) throw new Error("No checkout URL returned");
-      if (Platform.OS === "web") {
-        window.location.href = url;
-      } else {
-        await WebBrowser.openBrowserAsync(url);
-      }
-    } catch (e) {
-      // Basic alert without adding a new dependency
-      console.error(e);
+      setNotice(null);
+      await startCheckout(entryId);
+    } catch (e: any) {
+      setNotice("error");
+      setNoticeText(e?.message || "Payment failed");
     } finally {
       setInvoking(null);
     }
@@ -92,6 +131,24 @@ export default function MyEntries() {
       <Stack.Screen options={{ title: "My Entries" }} />
 
       <View className="px-4 mt-6">
+        {notice && (
+          <View
+            className={
+              notice === "success"
+                ? "mb-3 p-4 rounded-lg bg-green-50 border border-green-200"
+                : notice === "warning"
+                ? "mb-3 p-4 rounded-lg bg-yellow-50 border border-yellow-200"
+                : "mb-3 p-4 rounded-lg bg-red-50 border border-red-200"
+            }
+          >
+            <Text className={
+              notice === "success" ? "text-green-800" : notice === "warning" ? "text-yellow-800" : "text-red-800"
+            }>
+              {noticeText}
+            </Text>
+          </View>
+        )}
+
         <View className="mb-3 flex-row justify-between items-center">
           <Text className="text-lg font-semibold text-gray-900">Your Entries</Text>
           <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={load}>
@@ -114,10 +171,32 @@ export default function MyEntries() {
             const canPay = e.payment_status === "unpaid";
             const amount = e.payment_amount ?? 0;
             const currency = (e.payment_currency || "usd").toUpperCase();
+            const isHighlight = highlightId === e.id;
+            const t = e.category?.tournament;
+            const isOpen = (() => {
+              if (!t) return false;
+              if (t.status !== "registration_open") return false;
+              if (!t.registration_start_date || !t.registration_end_date) return false;
+              const now = new Date();
+              const s = new Date(t.registration_start_date);
+              const nd = new Date(t.registration_end_date);
+              return now >= s && now <= nd;
+            })();
             return (
-              <View key={e.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-3">
+              <View
+                key={e.id}
+                className={`bg-white rounded-xl shadow-sm p-5 mb-3 ${isHighlight ? "border border-green-300" : "border border-gray-100"}`}
+              >
                 <Text className="text-base font-medium text-gray-900">{title}</Text>
                 <Text className="text-sm text-gray-700 mt-1">{cat}</Text>
+                <View className="mt-2 flex-row items-center">
+                  <View className={`px-2 py-1 rounded ${isOpen ? "bg-green-100" : "bg-gray-100"}`}>
+                    <Text className={`text-xs ${isOpen ? "text-green-800" : "text-gray-800"}`}>{isOpen ? "Registration Open" : "Registration Closed"}</Text>
+                  </View>
+                  {t?.registration_start_date && t?.registration_end_date ? (
+                    <Text className="text-xs text-gray-600 ml-2">{t.registration_start_date} → {t.registration_end_date}</Text>
+                  ) : null}
+                </View>
                 <View className="flex-row mt-3">
                   <View className="mr-4">
                     <Text className="text-xs text-gray-500">Entry</Text>
@@ -138,12 +217,12 @@ export default function MyEntries() {
                   </Text>
                   {canPay ? (
                     <TouchableOpacity
-                      className={`rounded-lg py-2 px-4 ${invoking === e.id ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                      className={`rounded-lg py-2 px-4 ${(invoking === e.id || !isOpen) ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                       onPress={() => pay(e.id)}
-                      disabled={invoking === e.id}
+                      disabled={invoking === e.id || !isOpen}
                     >
-                      <Text className={`text-center font-semibold ${invoking === e.id ? "text-gray-500" : "text-white"}`}>
-                        {invoking === e.id ? "Opening..." : "Pay"}
+                      <Text className={`text-center font-semibold ${(invoking === e.id || !isOpen) ? "text-gray-500" : "text-white"}`}>
+                        {invoking === e.id ? "Opening..." : isOpen ? "Pay" : "Closed"}
                       </Text>
                     </TouchableOpacity>
                   ) : (
