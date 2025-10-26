@@ -61,15 +61,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="openai"
-        options={{
-          title: "OpenAI",
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon name="lightbulb-o" color={color} />
-          ),
-        }}
-      />
+      {/* Hide OpenAI from the Tab Bar (route still available if linked directly) */}
+      <Tabs.Screen name="openai" options={{ href: null }} />
       <Tabs.Screen
         name="tournaments"
         options={{
