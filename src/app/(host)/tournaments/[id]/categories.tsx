@@ -432,6 +432,7 @@ export default function ManageCategories() {
               value={fee}
               onChangeText={setFee}
             />
+            <Text className="text-xs text-gray-500 mt-1">Minimum fee is $20</Text>
           </View>
 
           <View className="mb-4">

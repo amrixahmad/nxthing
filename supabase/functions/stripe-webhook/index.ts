@@ -66,18 +66,60 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (!entryId) {
         console.warn("No entry_id in session metadata", session.id);
       } else {
-        // idempotent update
-        await supabase
+        // Retrieve full session to ensure totals are present
+        const full = await stripe.checkout.sessions.retrieve(session.id);
+        const paid = full.payment_status === "paid";
+        const totalCents = full.amount_total ?? null;
+        const sessCurrency = (full.currency || "usd").toLowerCase();
+
+        const { data: entry } = await supabase
           .from("entries")
-          .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+          .select("id, payment_amount, payment_currency, payment_status")
           .eq("id", entryId)
-          .in("payment_status", ["unpaid", "waived"]);
-        // Optional: auto-accept entry when paid
-        await supabase
-          .from("entries")
-          .update({ status: "accepted" })
-          .eq("id", entryId)
-          .eq("status", "pending");
+          .maybeSingle();
+
+        if (!entry) {
+          console.warn("Webhook: entry not found", entryId);
+        } else if (entry.payment_status === "paid") {
+          // Already handled
+        } else if (!paid || totalCents === null) {
+          console.warn("Webhook: session not paid or missing amount_total", session.id);
+          // Store reference only; do not mark paid
+          await supabase
+            .from("entries")
+            .update({ payment_reference: session.id })
+            .eq("id", entryId);
+        } else {
+          const expectedCents = Math.round(Number(entry.payment_amount ?? 0) * 100);
+          const expectedCurrency = String(entry.payment_currency || "usd").toLowerCase();
+          if (totalCents !== expectedCents || sessCurrency !== expectedCurrency) {
+            console.warn("Webhook: amount/currency mismatch", {
+              entryId,
+              expectedCents,
+              totalCents,
+              expectedCurrency,
+              sessCurrency,
+            });
+            // Record the reference; do not mark as paid
+            await supabase
+              .from("entries")
+              .update({ payment_reference: session.id })
+              .eq("id", entryId);
+          } else {
+            // Idempotent paid update
+            await supabase
+              .from("entries")
+              .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
+              .eq("id", entryId)
+              .in("payment_status", ["unpaid", "waived"]);
+            // Optional: auto-accept entry when paid
+            await supabase
+              .from("entries")
+              .update({ status: "accepted" })
+              .eq("id", entryId)
+              .eq("status", "pending");
+          }
+        }
       }
     }
 
