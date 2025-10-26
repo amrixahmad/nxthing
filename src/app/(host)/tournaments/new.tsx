@@ -45,6 +45,11 @@ export default function NewTournament() {
   const [timeMinute, setTimeMinute] = useState<number>(0);
   const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
 
+  const [errStart, setErrStart] = useState<string | null>(null);
+  const [errEnd, setErrEnd] = useState<string | null>(null);
+  const [errRegStart, setErrRegStart] = useState<string | null>(null);
+  const [errRegEnd, setErrRegEnd] = useState<string | null>(null);
+
   function parseISODate(v: string): Date | null {
     if (!v) return null;
     const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(v);
@@ -193,21 +198,26 @@ export default function NewTournament() {
   async function createTournament() {
     try {
       if (!session?.user) return;
-      if (!title || !startDate || !startTime || !regStart || !regStartTime || !regEnd || !regEndTime) {
-        Alert.alert("Missing info", "Title, start date/time and registration dates/times are required");
-        return;
-      }
+      setErrStart(null); setErrEnd(null); setErrRegStart(null); setErrRegEnd(null);
+      let missing = false;
+      if (!startDate || !startTime) { setErrStart("Start date and time are required"); missing = true; }
+      if (!regStart || !regStartTime) { setErrRegStart("Registration start is required"); missing = true; }
+      if (!regEnd || !regEndTime) { setErrRegEnd("Registration end is required"); missing = true; }
+      if (!title) { Alert.alert("Missing info", "Title is required"); return; }
+      if (missing) return;
       const startDT = combineDateTime(startDate, startTime);
       const regStartDT = combineDateTime(regStart, regStartTime);
       const regEndDT = combineDateTime(regEnd, regEndTime);
       if (!startDT || !regStartDT || !regEndDT) {
-        Alert.alert("Invalid dates", "Please check date/time formats (dd/mm/yyyy and h:mm AM/PM)");
+        if (!startDT) setErrStart("Invalid start date/time");
+        if (!regStartDT) setErrRegStart("Invalid registration start");
+        if (!regEndDT) setErrRegEnd("Invalid registration end");
         return;
       }
       const now = new Date();
       // Start must be in the future
       if (startDT <= now) {
-        Alert.alert("Invalid start", "Tournament start must be in the future");
+        setErrStart("Start must be in the future");
         return;
       }
 
@@ -218,30 +228,28 @@ export default function NewTournament() {
           return;
         }
         endDT = combineDateTime(endDate, endTime);
-        if (!endDT) {
-          Alert.alert("Invalid end", "Please check end date/time format");
-          return;
-        }
+        if (!endDT) { setErrEnd("Invalid end date/time"); return; }
         if (endDT <= startDT) {
-          Alert.alert("Invalid end", "End must be after the start time");
+          setErrEnd("End must be after the start time");
           return;
         }
       }
       // Registration window basic checks
       if (regStartDT >= regEndDT) {
-        Alert.alert("Invalid registration window", "Registration start must be before registration end");
+        setErrRegStart("Must be before end");
+        setErrRegEnd("Must be after start");
         return;
       }
       if (regStartDT <= now) {
-        Alert.alert("Invalid registration start", "Registration start must be in the future");
+        setErrRegStart("Must be in the future");
         return;
       }
       if (regEndDT <= now) {
-        Alert.alert("Invalid registration end", "Registration end must be in the future");
+        setErrRegEnd("Must be in the future");
         return;
       }
       if (regEndDT > startDT) {
-        Alert.alert("Invalid registration window", "Registration must end before the tournament start");
+        setErrRegEnd("Must be before tournament start");
         return;
       }
       setSubmitting(true);
@@ -304,7 +312,7 @@ export default function NewTournament() {
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={startDate}
-                onChangeText={setStartDate}
+                onChangeText={(v) => { setStartDate(v); setErrStart(null); }}
                 placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -319,7 +327,7 @@ export default function NewTournament() {
                 <TextInput
                   className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                   value={startTime}
-                  onChangeText={setStartTime}
+                  onChangeText={(v) => { setStartTime(v); setErrStart(null); }}
                   placeholder="h:mm AM/PM"
                   placeholderTextColor="#9CA3AF"
                   autoCapitalize="none"
@@ -328,6 +336,11 @@ export default function NewTournament() {
                   <Text className="text-gray-800">Pick</Text>
                 </TouchableOpacity>
               </View>
+              {errStart ? (
+                <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <Text className="text-xs text-red-800">{errStart}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -337,7 +350,7 @@ export default function NewTournament() {
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={endDate}
-                onChangeText={setEndDate}
+                onChangeText={(v) => { setEndDate(v); setErrEnd(null); }}
                 placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -352,7 +365,7 @@ export default function NewTournament() {
                 <TextInput
                   className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                   value={endTime}
-                  onChangeText={setEndTime}
+                  onChangeText={(v) => { setEndTime(v); setErrEnd(null); }}
                   placeholder="h:mm AM/PM"
                   placeholderTextColor="#9CA3AF"
                   autoCapitalize="none"
@@ -361,6 +374,11 @@ export default function NewTournament() {
                   <Text className="text-gray-800">Pick</Text>
                 </TouchableOpacity>
               </View>
+              {errEnd ? (
+                <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <Text className="text-xs text-red-800">{errEnd}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -370,7 +388,7 @@ export default function NewTournament() {
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={regStart}
-                onChangeText={setRegStart}
+                onChangeText={(v) => { setRegStart(v); setErrRegStart(null); }}
                 placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -385,7 +403,7 @@ export default function NewTournament() {
                 <TextInput
                   className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                   value={regStartTime}
-                  onChangeText={setRegStartTime}
+                  onChangeText={(v) => { setRegStartTime(v); setErrRegStart(null); }}
                   placeholder="h:mm AM/PM"
                   placeholderTextColor="#9CA3AF"
                   autoCapitalize="none"
@@ -394,6 +412,11 @@ export default function NewTournament() {
                   <Text className="text-gray-800">Pick</Text>
                 </TouchableOpacity>
               </View>
+              {errRegStart ? (
+                <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <Text className="text-xs text-red-800">{errRegStart}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -403,7 +426,7 @@ export default function NewTournament() {
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                 value={regEnd}
-                onChangeText={setRegEnd}
+                onChangeText={(v) => { setRegEnd(v); setErrRegEnd(null); }}
                 placeholder="dd/mm/yyyy"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -416,9 +439,9 @@ export default function NewTournament() {
               <Text className="text-base font-medium text-gray-700 mb-2">Registration end time (h:mm AM/PM)</Text>
               <View className="flex-row items-center">
                 <TextInput
-                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                   value={regEndTime}
-                  onChangeText={setRegEndTime}
+                  onChangeText={(v) => { setRegEndTime(v); setErrRegEnd(null); }}
                   placeholder="h:mm AM/PM"
                   placeholderTextColor="#9CA3AF"
                   autoCapitalize="none"
@@ -427,6 +450,11 @@ export default function NewTournament() {
                   <Text className="text-gray-800">Pick</Text>
                 </TouchableOpacity>
               </View>
+              {errRegEnd ? (
+                <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <Text className="text-xs text-red-800">{errRegEnd}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
 

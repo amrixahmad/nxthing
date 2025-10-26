@@ -44,6 +44,8 @@ export default function ManageCategories() {
   const [regStartTime, setRegStartTime] = useState("");
   const [regEnd, setRegEnd] = useState("");
   const [regEndTime, setRegEndTime] = useState("");
+  const [errRegStart, setErrRegStart] = useState<string | null>(null);
+  const [errRegEnd, setErrRegEnd] = useState<string | null>(null);
 
   // Time picker state (native)
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -223,31 +225,21 @@ export default function ManageCategories() {
         return;
       }
       if (open) {
+        setErrRegStart(null); setErrRegEnd(null);
         if (!regStart || !regEnd || !regStartTime || !regEndTime) {
-          Alert.alert("Set registration window first");
+          if (!regStart || !regStartTime) setErrRegStart("Registration start is required");
+          if (!regEnd || !regEndTime) setErrRegEnd("Registration end is required");
           return;
         }
         const sdt = combineDateTime(regStart, regStartTime);
         const edt = combineDateTime(regEnd, regEndTime);
         const now = new Date();
-        if (!sdt || !edt || sdt >= edt) {
-          Alert.alert("Invalid window", "Start must be before end");
-          return;
-        }
-        if (sdt <= now) {
-          Alert.alert("Invalid window", "Registration start must be in the future");
-          return;
-        }
-        if (edt <= now) {
-          Alert.alert("Invalid window", "Registration end must be in the future");
-          return;
-        }
+        if (!sdt || !edt || sdt >= edt) { setErrRegStart("Must be before end"); setErrRegEnd("Must be after start"); return; }
+        if (sdt <= now) { setErrRegStart("Must be in the future"); return; }
+        if (edt <= now) { setErrRegEnd("Must be in the future"); return; }
         if (tournament?.start_date) {
           const ts = new Date(tournament.start_date);
-          if (edt > ts) {
-            Alert.alert("Invalid window", "Registration must end before the tournament start");
-            return;
-          }
+          if (edt > ts) { setErrRegEnd("Must be before tournament start"); return; }
         }
       }
       setSaving(true);
@@ -268,31 +260,21 @@ export default function ManageCategories() {
   async function saveWindow() {
     try {
       if (!tournament) return;
+      setErrRegStart(null); setErrRegEnd(null);
       if (!regStart || !regEnd || !regStartTime || !regEndTime) {
-        Alert.alert("Start and end are required");
+        if (!regStart || !regStartTime) setErrRegStart("Registration start is required");
+        if (!regEnd || !regEndTime) setErrRegEnd("Registration end is required");
         return;
       }
       const sdt = combineDateTime(regStart, regStartTime);
       const edt = combineDateTime(regEnd, regEndTime);
       const now = new Date();
-      if (!sdt || !edt || sdt >= edt) {
-        Alert.alert("Invalid window", "Start must be before end");
-        return;
-      }
-      if (sdt <= now) {
-        Alert.alert("Invalid window", "Registration start must be in the future");
-        return;
-      }
-      if (edt <= now) {
-        Alert.alert("Invalid window", "Registration end must be in the future");
-        return;
-      }
+      if (!sdt || !edt || sdt >= edt) { setErrRegStart("Must be before end"); setErrRegEnd("Must be after start"); return; }
+      if (sdt <= now) { setErrRegStart("Must be in the future"); return; }
+      if (edt <= now) { setErrRegEnd("Must be in the future"); return; }
       if (tournament?.start_date) {
         const ts = new Date(tournament.start_date);
-        if (edt > ts) {
-          Alert.alert("Invalid window", "Registration must end before the tournament start");
-          return;
-        }
+        if (edt > ts) { setErrRegEnd("Must be before tournament start"); return; }
       }
       setSaving(true);
       const { error } = await supabase
@@ -520,7 +502,7 @@ export default function ManageCategories() {
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               value={regStart}
-              onChangeText={setRegStart}
+              onChangeText={(v) => { setRegStart(v); setErrRegStart(null); }}
               placeholder="dd/mm/yyyy"
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
@@ -530,7 +512,7 @@ export default function ManageCategories() {
               <TextInput
                 className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
                 value={regStartTime}
-                onChangeText={setRegStartTime}
+                onChangeText={(v) => { setRegStartTime(v); setErrRegStart(null); }}
                 placeholder="h:mm AM/PM"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -539,13 +521,18 @@ export default function ManageCategories() {
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
+            {errRegStart ? (
+              <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <Text className="text-xs text-red-800">{errRegStart}</Text>
+              </View>
+            ) : null}
           </View>
           <View className="mb-4">
             <Text className="text-sm text-gray-700 mb-1">End date (dd/mm/yyyy)</Text>
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               value={regEnd}
-              onChangeText={setRegEnd}
+              onChangeText={(v) => { setRegEnd(v); setErrRegEnd(null); }}
               placeholder="dd/mm/yyyy"
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
@@ -555,7 +542,7 @@ export default function ManageCategories() {
               <TextInput
                 className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white flex-1"
                 value={regEndTime}
-                onChangeText={setRegEndTime}
+                onChangeText={(v) => { setRegEndTime(v); setErrRegEnd(null); }}
                 placeholder="h:mm AM/PM"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
@@ -564,6 +551,11 @@ export default function ManageCategories() {
                 <Text className="text-gray-800">Pick</Text>
               </TouchableOpacity>
             </View>
+            {errRegEnd ? (
+              <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <Text className="text-xs text-red-800">{errRegEnd}</Text>
+              </View>
+            ) : null}
           </View>
           <View className="flex-row space-x-2">
             <TouchableOpacity
