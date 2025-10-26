@@ -68,7 +68,12 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
-  const { session } = useSession();
+  const { session, loading } = useSession();
+
+  // Avoid flashing auth screens before session is known
+  if (loading) {
+    return null;
+  }
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>

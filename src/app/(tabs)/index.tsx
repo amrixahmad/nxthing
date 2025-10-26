@@ -60,7 +60,7 @@ export default function HomeScreen() {
 
         <View className="space-y-3">
           {/* AI Assistant Card */}
-          <Link href="/(tabs)/openai" asChild>
+          {/* <Link href="/(tabs)/openai" asChild>
             <TouchableOpacity className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm active:bg-gray-50">
               <View className="flex-row items-center">
                 <View className="bg-blue-100 rounded-full p-3 mr-4">
@@ -77,7 +77,7 @@ export default function HomeScreen() {
                 <Text className="text-gray-400 text-xl">›</Text>
               </View>
             </TouchableOpacity>
-          </Link>
+          </Link> */}
 
           {/* Browse Tournaments (Player Registration) */}
           <Link href="/tournaments/browse" asChild>
@@ -99,19 +99,19 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Link>
 
-          {/* Account Settings Card */}
-          <Link href="/(tabs)/account" asChild>
+          {/* Tournaments Calendar Card */}
+          <Link href="/tournaments/calendar" asChild>
             <TouchableOpacity className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm active:bg-gray-50">
               <View className="flex-row items-center">
-                <View className="bg-green-100 rounded-full p-3 mr-4">
-                  <Text className="text-2xl">👤</Text>
+                <View className="bg-yellow-100 rounded-full p-3 mr-4">
+                  <Text className="text-2xl">📅</Text>
                 </View>
                 <View className="flex-1">
                   <Text className="text-lg font-semibold text-gray-900 mb-1">
-                    Account Settings
+                    Tournaments Calendar
                   </Text>
                   <Text className="text-gray-600 text-sm">
-                    Manage your profile and preferences
+                    See upcoming tournaments by month
                   </Text>
                 </View>
                 <Text className="text-gray-400 text-xl">›</Text>
@@ -139,30 +139,31 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Link>
 
-          {/* Tournaments Calendar Card */}
-          <Link href="/tournaments/calendar" asChild>
+          {/* Account Settings Card */}
+          <Link href="/(tabs)/account" asChild>
             <TouchableOpacity className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm active:bg-gray-50">
               <View className="flex-row items-center">
-                <View className="bg-yellow-100 rounded-full p-3 mr-4">
-                  <Text className="text-2xl">📅</Text>
+                <View className="bg-green-100 rounded-full p-3 mr-4">
+                  <Text className="text-2xl">👤</Text>
                 </View>
                 <View className="flex-1">
                   <Text className="text-lg font-semibold text-gray-900 mb-1">
-                    Tournaments Calendar
+                    Account Settings
                   </Text>
                   <Text className="text-gray-600 text-sm">
-                    See upcoming tournaments by month
+                    Manage your profile and preferences
                   </Text>
                 </View>
                 <Text className="text-gray-400 text-xl">›</Text>
               </View>
             </TouchableOpacity>
-          </Link>
+          </Link>                   
+
         </View>
       </View>
 
       {/* Features Overview */}
-      <View className="px-4 mt-8">
+      {/* <View className="px-4 mt-8">
         <Text className="text-lg font-semibold text-gray-900 mb-4 px-2">
           App Features
         </Text>
@@ -207,7 +208,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-      </View>
+      </View> */}
 
       {/* User Info */}
       <View className="px-4 mt-6 mb-8">
