@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Alert } from "react-native";
-import { Stack, router } from "expo-router";
+import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -23,8 +23,11 @@ function fmt(d?: string | null) {
 
 export default function HostTournaments() {
   const { session } = useSession();
+  const params = useLocalSearchParams<{ notice?: string }>();
   const [items, setItems] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<"success" | null>(null);
+  const [noticeText, setNoticeText] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -47,6 +50,17 @@ export default function HostTournaments() {
     load();
   }, [session]);
 
+  useEffect(() => {
+    if (params.notice) {
+      if (params.notice === "created") setNoticeText("Tournament created");
+      else if (params.notice === "updated") setNoticeText("Changes saved");
+      else setNoticeText("Saved");
+      setNotice("success");
+      setTimeout(() => setNotice(null), 2500);
+      router.replace("/host" as any);
+    }
+  }, [params.notice]);
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       <Stack.Screen options={{ title: "Host Dashboard" }} />
@@ -59,6 +73,11 @@ export default function HostTournaments() {
       </View>
 
       <View className="px-4 mt-6">
+        {notice && (
+          <View className="mb-3 p-4 rounded-lg bg-green-50 border border-green-200">
+            <Text className="text-green-800">{noticeText}</Text>
+          </View>
+        )}
         <TouchableOpacity className="bg-blue-600 rounded-xl p-4 mb-4 active:bg-blue-700" onPress={() => router.push("/host/new" as any)}>
           <Text className="text-white text-center font-semibold">＋ New Tournament</Text>
         </TouchableOpacity>
@@ -80,7 +99,11 @@ export default function HostTournaments() {
               >
                 <View className="flex-row justify-between items-center mb-1">
                   <Text className="text-lg font-semibold text-gray-900">{t.title}</Text>
-                  <Text className="text-xs text-gray-500">{t.status || "draft"}</Text>
+                  <View className={`px-2 py-1 rounded ${t.status === "registration_open" ? "bg-green-100" : "bg-gray-100"}`}>
+                    <Text className={`text-xs ${t.status === "registration_open" ? "text-green-800" : "text-gray-800"}`}>
+                      {t.status === "registration_open" ? "Registration Open" : (t.status || "draft")}
+                    </Text>
+                  </View>
                 </View>
                 <Text className="text-gray-600">Start: {fmt(t.start_date)}</Text>
                 <TouchableOpacity

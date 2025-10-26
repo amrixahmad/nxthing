@@ -13,6 +13,7 @@ import { View, TouchableOpacity, Text, Platform } from "react-native";
 import { useColorScheme } from "@/src/components/useColorScheme";
 import Colors from "@/src/constants/Colors";
 import { SessionProvider, useSession } from "../../context/SessionProvider";
+import { ToastProvider } from "@/src/components/Toast";
 
 // Import your global CSS file
 import "../../global.css";
@@ -61,7 +62,9 @@ export default function RootLayout() {
   return (
     <SessionProvider>
       <SplashScreenController />
-      <RootLayoutNav />
+      <ToastProvider>
+        <RootLayoutNav />
+      </ToastProvider>
     </SessionProvider>
   );
 }

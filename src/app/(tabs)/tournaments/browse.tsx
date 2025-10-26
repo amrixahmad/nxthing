@@ -12,6 +12,7 @@ type Tour = {
   status?: string | null;
   registration_start_date?: string | null;
   registration_end_date?: string | null;
+  created_at?: string | null;
   tcs?: Cat[];
 };
 type EntryMeta = { id: number; category_id: number; payment_status: string };
@@ -26,15 +27,16 @@ export default function BrowseTournaments() {
     setLoading(true);
     const { data } = await supabase
       .from("tournaments")
-      .select("id, title, status, registration_start_date, registration_end_date, tcs:tournament_categories(id, name, registration_fee)")
+      .select("id, title, status, registration_start_date, registration_end_date, created_at, tcs:tournament_categories(id, name, registration_fee)")
       .eq("status", "registration_open")
-      .order("registration_start_date", { ascending: true });
+      .order("created_at", { ascending: false });
     const normalized: Tour[] = ((data as any[]) || []).map((r: any) => ({
       id: r.id,
       title: r.title ?? null,
       status: r.status ?? null,
       registration_start_date: r.registration_start_date ?? null,
       registration_end_date: r.registration_end_date ?? null,
+      created_at: r.created_at ?? null,
       tcs: Array.isArray(r.tcs) ? r.tcs : [],
     }));
     setTournaments(normalized);
@@ -76,7 +78,10 @@ export default function BrowseTournaments() {
         ) : (
           tournaments.map((t) => (
             <View key={t.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-4">
-              <Text className="text-base font-semibold text-gray-900">{t.title || `Tournament #${t.id}`}</Text>
+              <View className="flex-row justify-between items-center">
+                <Text className="text-base font-semibold text-gray-900">{t.title || `Tournament #${t.id}`}</Text>
+                <Text className="text-[10px] text-gray-500">Created {formatDateTimeLocal(t.created_at || null)}</Text>
+              </View>
               <View className="mt-2">
                 <View className={`self-start px-2 py-1 rounded ${(t.status === 'registration_open') ? 'bg-green-100' : 'bg-gray-100'}`}>
                   <Text className={`text-xs ${(t.status === 'registration_open') ? 'text-green-800' : 'text-gray-800'}`}>

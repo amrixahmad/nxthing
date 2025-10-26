@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Plat
 import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/utils/datetime";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, router } from "expo-router";
+import { useToast } from "@/src/components/Toast";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -27,6 +28,7 @@ export default function ManageCategories() {
   const { session } = useSession();
   const params = useLocalSearchParams<{ id: string }>();
   const tid = Number(params.id);
+  const toast = useToast();
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [items, setItems] = useState<Category[]>([]);
@@ -191,6 +193,7 @@ export default function ManageCategories() {
       setFee("20");
       setMaxTeams("16");
       await load();
+      toast.show({ type: "success", message: "Category added" });
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {
@@ -204,6 +207,7 @@ export default function ManageCategories() {
       const { error } = await supabase.from("tournament_categories").delete().eq("id", id);
       if (error) throw error;
       await load();
+      toast.show({ type: "success", message: "Category removed" });
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {
@@ -237,6 +241,7 @@ export default function ManageCategories() {
         .eq("id", tid);
       if (error) throw error;
       await load();
+      toast.show({ type: "success", message: open ? "Registration opened" : "Registration closed" });
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {
@@ -264,6 +269,7 @@ export default function ManageCategories() {
         .eq("id", tid);
       if (error) throw error;
       await load();
+      toast.show({ type: "success", message: "Registration window saved" });
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {
@@ -295,6 +301,7 @@ export default function ManageCategories() {
         .eq("id", tid);
       if (error) throw error;
       await load();
+      toast.show({ type: "success", message: "Registration opened" });
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {

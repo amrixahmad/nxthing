@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
 import { Stack, Link, router } from "expo-router";
+import { useToast } from "@/src/components/Toast";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -8,6 +9,7 @@ import { toDMY, toHM12, parseDMY, combineDateTime, parseTime12 } from "@/utils/d
 
 export default function NewTournament() {
   const { session } = useSession();
+  const toast = useToast();
 
   const [title, setTitle] = useState("");
   const [venueName, setVenueName] = useState("");
@@ -229,6 +231,7 @@ export default function NewTournament() {
           format,
         });
       if (error) throw error;
+      toast.show({ type: "success", message: "Tournament created" });
       router.replace("/host" as any);
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
