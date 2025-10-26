@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Alert } from "react-native";
-import { Stack, Link } from "expo-router";
+import { Stack, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -59,11 +59,9 @@ export default function HostTournaments() {
       </View>
 
       <View className="px-4 mt-6">
-        <Link href="/tournaments/new" asChild>
-          <TouchableOpacity className="bg-blue-600 rounded-xl p-4 mb-4 active:bg-blue-700">
-            <Text className="text-white text-center font-semibold">＋ New Tournament</Text>
-          </TouchableOpacity>
-        </Link>
+        <TouchableOpacity className="bg-blue-600 rounded-xl p-4 mb-4 active:bg-blue-700" onPress={() => router.push("/host/new" as any)}>
+          <Text className="text-white text-center font-semibold">＋ New Tournament</Text>
+        </TouchableOpacity>
 
         {loading ? (
           <View className="bg-white rounded-xl border border-gray-100 p-6">
@@ -85,11 +83,12 @@ export default function HostTournaments() {
                   <Text className="text-xs text-gray-500">{t.status || "draft"}</Text>
                 </View>
                 <Text className="text-gray-600">Start: {fmt(t.start_date)}</Text>
-                <Link href={{ pathname: "/tournaments/[id]/categories", params: { id: String(t.id) } }} asChild>
-                  <TouchableOpacity className="mt-3 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50">
-                    <Text className="text-gray-800 text-center">Manage Categories</Text>
-                  </TouchableOpacity>
-                </Link>
+                <TouchableOpacity
+                  className="mt-3 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                  onPress={() => router.push({ pathname: "/host/[id]/categories", params: { id: String(t.id) } } as any)}
+                >
+                  <Text className="text-gray-800 text-center">Manage Categories</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>

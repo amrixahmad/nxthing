@@ -9,7 +9,7 @@
 
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { useSession } from "@/context/SessionProvider";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 
 /**
  * Home screen component - main dashboard of the application
@@ -120,24 +120,22 @@ export default function HomeScreen() {
           </Link>
 
           {/* Host Dashboard Card */}
-          <Link href="/tournaments" asChild>
-            <TouchableOpacity className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm active:bg-gray-50">
-              <View className="flex-row items-center">
-                <View className="bg-purple-100 rounded-full p-3 mr-4">
-                  <Text className="text-2xl">🏆</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-lg font-semibold text-gray-900 mb-1">
-                    Host Dashboard
-                  </Text>
-                  <Text className="text-gray-600 text-sm">
-                    Create and manage tournaments
-                  </Text>
-                </View>
-                <Text className="text-gray-400 text-xl">›</Text>
+          <TouchableOpacity className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm active:bg-gray-50" onPress={() => router.push("/(tabs)/host" as any)}>
+            <View className="flex-row items-center">
+              <View className="bg-purple-100 rounded-full p-3 mr-4">
+                <Text className="text-2xl">🏆</Text>
               </View>
-            </TouchableOpacity>
-          </Link>
+              <View className="flex-1">
+                <Text className="text-lg font-semibold text-gray-900 mb-1">
+                  Host Dashboard
+                </Text>
+                <Text className="text-gray-600 text-sm">
+                  Create and manage tournaments
+                </Text>
+              </View>
+              <Text className="text-gray-400 text-xl">›</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Account Settings Card */}
           <Link href="/(tabs)/account" asChild>

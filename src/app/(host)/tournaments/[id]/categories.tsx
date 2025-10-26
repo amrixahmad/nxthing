@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
 import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/utils/datetime";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { Stack, useLocalSearchParams, router, Link } from "expo-router";
+import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -54,6 +54,61 @@ export default function ManageCategories() {
   const [timeHour, setTimeHour] = useState<number>(9);
   const [timeMinute, setTimeMinute] = useState<number>(0);
   const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
+
+  function handleTimePick(target: "regStart" | "regEnd") {
+    if (Platform.OS === "web") {
+      setTimeTarget(target);
+      const v = target === "regStart" ? regStartTime : regEndTime;
+      const parsed = parseTime12(v || "");
+      if (parsed) {
+        let h12 = parsed.hours24 % 12;
+        if (h12 === 0) h12 = 12;
+        setTimeHour(h12);
+        setTimeAmPm(parsed.hours24 < 12 ? "AM" : "PM");
+        setTimeMinute(parsed.minutes);
+      } else {
+        const now = new Date();
+        let h = now.getHours();
+        let h12 = h % 12;
+        if (h12 === 0) h12 = 12;
+        setTimeHour(h12);
+        setTimeAmPm(h < 12 ? "AM" : "PM");
+        setTimeMinute(now.getMinutes() - (now.getMinutes() % 5));
+      }
+      setTimeOpen(true);
+      return;
+    }
+    // Native
+    setTimePickerTarget(target);
+    const v = target === "regStart" ? regStartTime : regEndTime;
+    const base = new Date();
+    const parsed = parseTime12(v || "");
+    if (parsed) base.setHours(parsed.hours24, parsed.minutes, 0, 0);
+    setTimePickerDate(base);
+    setShowTimePicker(true);
+  }
+
+  function onNativeTimeChange(event: DateTimePickerEvent, date?: Date) {
+    if (event.type === "dismissed") {
+      setShowTimePicker(false);
+      return;
+    }
+    if (date && timePickerTarget) {
+      const val = toHM12(date);
+      if (timePickerTarget === "regStart") setRegStartTime(val);
+      if (timePickerTarget === "regEnd") setRegEndTime(val);
+    }
+    setShowTimePicker(false);
+  }
+
+  function confirmWebTime() {
+    const hh = String(timeHour);
+    const mm = String(timeMinute).padStart(2, "0");
+    const val = `${hh}:${mm} ${timeAmPm}`;
+    if (timeTarget === "regStart") setRegStartTime(val);
+    if (timeTarget === "regEnd") setRegEndTime(val);
+    setTimeOpen(false);
+  }
 
   const templates = useMemo(
     () => [
@@ -505,11 +560,9 @@ export default function ManageCategories() {
           </View>
         </View>
 
-        <Link href="/tournaments" asChild>
-          <TouchableOpacity className="rounded-lg py-3 px-6 border border-gray-300 mb-8">
-            <Text className="text-center text-gray-700">Back to Host Dashboard</Text>
-          </TouchableOpacity>
-        </Link>
+        <TouchableOpacity className="rounded-lg py-3 px-6 border border-gray-300 mb-8" onPress={() => router.push("/host" as any)}>
+          <Text className="text-center text-gray-700">Back to Host Dashboard</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );

@@ -42,7 +42,6 @@ export default function TournamentDetails() {
 
   async function load() {
     setLoading(true);
-    // Load tournament and its categories
     const { data: tdata } = await supabase
       .from("tournaments")
       .select(
@@ -67,7 +66,6 @@ export default function TournamentDetails() {
       : null;
     setTour(details);
 
-    // Load user's entries for this tournament
     if (session?.user) {
       const { data: entries } = await supabase
         .from("entries")

@@ -229,7 +229,7 @@ export default function NewTournament() {
           format,
         });
       if (error) throw error;
-      router.replace("/tournaments");
+      router.replace("/host" as any);
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
     } finally {
@@ -433,11 +433,9 @@ export default function NewTournament() {
             </Text>
           </TouchableOpacity>
 
-          <Link href="/tournaments" asChild>
-            <TouchableOpacity className="rounded-lg py-3 px-6 mt-3 border border-gray-300">
-              <Text className="text-center text-gray-700">Cancel</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity className="rounded-lg py-3 px-6 mt-3 border border-gray-300" onPress={() => router.push("/host" as any)}>
+            <Text className="text-center text-gray-700">Cancel</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
