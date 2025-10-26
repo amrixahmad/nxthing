@@ -229,9 +229,25 @@ export default function ManageCategories() {
         }
         const sdt = combineDateTime(regStart, regStartTime);
         const edt = combineDateTime(regEnd, regEndTime);
-        if (!sdt || !edt || sdt > edt) {
+        const now = new Date();
+        if (!sdt || !edt || sdt >= edt) {
           Alert.alert("Invalid window", "Start must be before end");
           return;
+        }
+        if (sdt <= now) {
+          Alert.alert("Invalid window", "Registration start must be in the future");
+          return;
+        }
+        if (edt <= now) {
+          Alert.alert("Invalid window", "Registration end must be in the future");
+          return;
+        }
+        if (tournament?.start_date) {
+          const ts = new Date(tournament.start_date);
+          if (edt > ts) {
+            Alert.alert("Invalid window", "Registration must end before the tournament start");
+            return;
+          }
         }
       }
       setSaving(true);
@@ -258,9 +274,25 @@ export default function ManageCategories() {
       }
       const sdt = combineDateTime(regStart, regStartTime);
       const edt = combineDateTime(regEnd, regEndTime);
-      if (!sdt || !edt || sdt > edt) {
+      const now = new Date();
+      if (!sdt || !edt || sdt >= edt) {
         Alert.alert("Invalid window", "Start must be before end");
         return;
+      }
+      if (sdt <= now) {
+        Alert.alert("Invalid window", "Registration start must be in the future");
+        return;
+      }
+      if (edt <= now) {
+        Alert.alert("Invalid window", "Registration end must be in the future");
+        return;
+      }
+      if (tournament?.start_date) {
+        const ts = new Date(tournament.start_date);
+        if (edt > ts) {
+          Alert.alert("Invalid window", "Registration must end before the tournament start");
+          return;
+        }
       }
       setSaving(true);
       const { error } = await supabase

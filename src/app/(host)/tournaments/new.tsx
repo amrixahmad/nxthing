@@ -204,6 +204,13 @@ export default function NewTournament() {
         Alert.alert("Invalid dates", "Please check date/time formats (dd/mm/yyyy and h:mm AM/PM)");
         return;
       }
+      const now = new Date();
+      // Start must be in the future
+      if (startDT <= now) {
+        Alert.alert("Invalid start", "Tournament start must be in the future");
+        return;
+      }
+
       let endDT: Date | null = null;
       if (endDate || endTime) {
         if (!endDate || !endTime) {
@@ -215,6 +222,27 @@ export default function NewTournament() {
           Alert.alert("Invalid end", "Please check end date/time format");
           return;
         }
+        if (endDT <= startDT) {
+          Alert.alert("Invalid end", "End must be after the start time");
+          return;
+        }
+      }
+      // Registration window basic checks
+      if (regStartDT >= regEndDT) {
+        Alert.alert("Invalid registration window", "Registration start must be before registration end");
+        return;
+      }
+      if (regStartDT <= now) {
+        Alert.alert("Invalid registration start", "Registration start must be in the future");
+        return;
+      }
+      if (regEndDT <= now) {
+        Alert.alert("Invalid registration end", "Registration end must be in the future");
+        return;
+      }
+      if (regEndDT > startDT) {
+        Alert.alert("Invalid registration window", "Registration must end before the tournament start");
+        return;
       }
       setSubmitting(true);
       const { error } = await supabase
