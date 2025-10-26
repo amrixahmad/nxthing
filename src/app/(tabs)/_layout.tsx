@@ -1,6 +1,7 @@
 import React from "react";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
+import { View, TouchableOpacity, Text, Platform } from "react-native";
 
 import Colors from "@/src/constants/Colors";
 import { useColorScheme } from "@/src/components/useColorScheme";
@@ -21,9 +22,41 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
         headerShown: useClientOnlyValue(false, true),
+        headerRight: () => (
+          <View className="flex-row items-center mr-2">
+            <TouchableOpacity
+              className="px-3 py-2 rounded-lg mr-1"
+              onPress={() => {
+                if (Platform.OS === "web") {
+                  window.location.assign("/");
+                } else {
+                  router.push("/");
+                }
+              }}
+            >
+              <View className="flex-row items-center">
+                <FontAwesome name="home" size={18} color={Colors[colorScheme ?? "light"].tint} />
+                <Text className="ml-1 text-blue-600">Home</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="px-3 py-2 rounded-lg"
+              onPress={() => {
+                if (Platform.OS === "web") {
+                  window.location.assign("/tournaments/browse");
+                } else {
+                  router.push("/tournaments/browse");
+                }
+              }}
+            >
+              <View className="flex-row items-center">
+                <FontAwesome name="trophy" size={18} color={Colors[colorScheme ?? "light"].tint} />
+                <Text className="ml-1 text-blue-600">Tournaments</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ),
       }}
     >
       <Tabs.Screen
@@ -40,6 +73,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <TabBarIcon name="lightbulb-o" color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="tournaments"
+        options={{
+          title: "Tournaments",
+          tabBarIcon: ({ color }) => <TabBarIcon name="trophy" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="host"
+        options={{
+          title: "Host",
+          tabBarIcon: ({ color }) => <TabBarIcon name="briefcase" color={color} />,
         }}
       />
       <Tabs.Screen

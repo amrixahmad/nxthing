@@ -37,14 +37,23 @@ export default function NotFoundScreen() {
           </View>
         </View>
 
-        {/* Action Button */}
-        <Link href="/" asChild>
-          <TouchableOpacity className="bg-blue-600 rounded-lg py-4 px-8 w-full max-w-sm active:bg-blue-700">
-            <Text className="text-white font-semibold text-center">
-              🏠 Return to Home
-            </Text>
-          </TouchableOpacity>
-        </Link>
+        {/* Action Buttons */}
+        <View className="w-full max-w-sm">
+          <Link href="/" asChild>
+            <TouchableOpacity className="bg-blue-600 rounded-lg py-4 px-8 active:bg-blue-700 mb-3">
+              <Text className="text-white font-semibold text-center">
+                🏠 Return to Home
+              </Text>
+            </TouchableOpacity>
+          </Link>
+          <Link href="/tournaments/browse" asChild>
+            <TouchableOpacity className="bg-gray-100 rounded-lg py-4 px-8 active:bg-gray-200">
+              <Text className="text-gray-800 font-semibold text-center">
+                🏆 Browse Tournaments
+              </Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
 
         {/* Help Text */}
         <Text className="text-gray-500 text-sm mt-6 text-center">
