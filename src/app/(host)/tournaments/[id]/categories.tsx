@@ -35,7 +35,7 @@ export default function ManageCategories() {
 
   const [name, setName] = useState("");
   const [ptype, setPtype] = useState<"singles" | "doubles" | "team">("singles");
-  const [fee, setFee] = useState("0");
+  const [fee, setFee] = useState("20");
   const [maxTeams, setMaxTeams] = useState("16");
 
   const [regStart, setRegStart] = useState("");
@@ -169,6 +169,10 @@ export default function ManageCategories() {
       }
       setSaving(true);
       const regFee = Number(fee) || 0;
+      if (regFee < 20) {
+        Alert.alert("Minimum fee is $20");
+        return;
+      }
       const max = Number(maxTeams) || null;
       const teamMin = opts?.teamMin ?? (ptype === "doubles" ? 2 : 1);
       const teamMax = opts?.teamMax ?? (ptype === "doubles" ? 2 : 1);
@@ -184,7 +188,7 @@ export default function ManageCategories() {
       if (error) throw error;
       setName("");
       setPtype("singles");
-      setFee("0");
+      setFee("20");
       setMaxTeams("16");
       await load();
     } catch (e) {

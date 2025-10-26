@@ -132,8 +132,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const fee: number = Number((category?.registration_fee ?? 0) as number);
-    if (!fee || isNaN(fee) || fee <= 0) {
+    if (!fee || isNaN(fee)) {
       return new Response(JSON.stringify({ error: "Invalid registration fee" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (fee < 20) {
+      return new Response(JSON.stringify({ error: "Minimum registration fee is $20" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -195,7 +201,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         tournament_id: String(tournament.id),
         user_id: user.id,
       },
-      allow_promotion_codes: true,
+      allow_promotion_codes: false,
     });
 
     // store reference immediately
