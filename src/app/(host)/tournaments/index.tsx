@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+import { useToast } from "@/src/components/Toast";
 
 type Tournament = {
   id: number;
@@ -28,6 +29,7 @@ export default function HostTournaments() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<"success" | null>(null);
   const [noticeText, setNoticeText] = useState("");
+  const toast = useToast();
 
   useEffect(() => {
     async function load() {
@@ -106,12 +108,48 @@ export default function HostTournaments() {
                   </View>
                 </View>
                 <Text className="text-gray-600">Start: {fmt(t.start_date)}</Text>
-                <TouchableOpacity
-                  className="mt-3 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
-                  onPress={() => router.push({ pathname: "/host/[id]/categories", params: { id: String(t.id) } } as any)}
-                >
-                  <Text className="text-gray-800 text-center">Manage Categories</Text>
-                </TouchableOpacity>
+                <View className="mt-3 flex-row">
+                  <TouchableOpacity
+                    className="px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    onPress={() => router.push({ pathname: "/host/[id]/categories", params: { id: String(t.id) } } as any)}
+                  >
+                    <Text className="text-gray-800">Manage Categories</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="ml-2 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    onPress={() => router.push({ pathname: "/host/[id]/edit", params: { id: String(t.id) } } as any)}
+                  >
+                    <Text className="text-gray-800">Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="ml-2 px-4 py-3 rounded-lg border border-red-300 bg-red-50 active:bg-red-100"
+                    onPress={async () => {
+                      const confirm = Platform.OS === "web" ? (typeof window !== "undefined" ? window.confirm("Delete this tournament? This cannot be undone.") : true) : undefined;
+                      if (Platform.OS !== "web") {
+                        let proceed = false;
+                        await new Promise<void>((resolve) => {
+                          Alert.alert("Delete Tournament", "Are you sure? This cannot be undone.", [
+                            { text: "Cancel", style: "cancel", onPress: () => { proceed = false; resolve(); } },
+                            { text: "Delete", style: "destructive", onPress: () => { proceed = true; resolve(); } },
+                          ]);
+                        });
+                        if (!proceed) return;
+                      } else if (!confirm) {
+                        return;
+                      }
+                      try {
+                        const { error } = await supabase.from("tournaments").delete().eq("id", t.id);
+                        if (error) throw error;
+                        setItems((prev) => prev.filter((x) => x.id !== t.id));
+                        toast.show({ type: "success", message: "Tournament deleted" });
+                      } catch (e) {
+                        if (e instanceof Error) Alert.alert("Error", e.message);
+                      }
+                    }}
+                  >
+                    <Text className="text-red-700">Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </View>
