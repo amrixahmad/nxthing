@@ -34,6 +34,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("EXPO_PUBLIC_SUPABASE_URL") || "http://127.0.0.1:54321";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "";
+    if (!serviceKey) {
+      return new Response(JSON.stringify({ error: "SERVICE_ROLE key missing. Set SUPABASE_SERVICE_ROLE_KEY in env." }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -151,12 +154,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Create N users and entries
     let createdUsers: string[] = [];
     for (let i = 0; i < entries; i++) {
-      const email = `seed-${seedTag}-${String(i + 1).padStart(2, "0")}@dev.local`;
+      const username = `seed-${seedTag}-${String(i + 1).padStart(2, "0")}`;
+      const email = `${username}@dev.local`;
       const password = "Password!123";
-      const { data: userRes, error: cuErr } = await (supabase as any).auth.admin.createUser({ email, password, email_confirm: true });
-      if (cuErr) throw cuErr;
+      const { data: userRes, error: cuErr } = await (supabase as any).auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { username, full_name: username },
+      });
+      if (cuErr) {
+        console.error("createUser error", { email, message: (cuErr as any)?.message, status: (cuErr as any)?.status, name: (cuErr as any)?.name });
+        return new Response(
+          JSON.stringify({ error: "Database error creating new user", email, details: { message: (cuErr as any)?.message, status: (cuErr as any)?.status, name: (cuErr as any)?.name } }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       const userId: string = userRes.user.id;
       createdUsers.push(userId);
+
+      // Ensure profile exists and has username (in case signup trigger is blocked)
+      const { error: upErr } = await supabase
+        .from("profiles")
+        .upsert({ id: userId, username, full_name: username, updated_at: new Date().toISOString() });
+      if (upErr) {
+        console.warn("profiles upsert warning", upErr.message);
+      }
 
       // Insert entry as paid+accepted
       const { data: eIns, error: eErr } = await supabase
@@ -177,7 +200,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const entryId = (eIns as any).id as number;
 
       // Add member
-      const { error: mErr } = await supabase.from("entry_members").insert({ entry_id: entryId, profile_id: userId });
+      const { error: mErr } = await supabase.from("entry_members").insert({ entry_id: entryId, profile_id: userId, display_name: username });
       if (mErr) throw mErr;
     }
 

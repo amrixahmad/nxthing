@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, router } from "expo-router";
+import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
 type RoundRow = { round_number: number; name: string | null };
@@ -22,11 +23,14 @@ export default function FixturesByCategory() {
   const params = useLocalSearchParams<{ id: string; categoryId: string }>();
   const tid = Number(params.id);
   const cid = Number(params.categoryId);
+  const { session } = useSession();
 
   const [loading, setLoading] = useState(true);
   const [rounds, setRounds] = useState<RoundRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [activeRound, setActiveRound] = useState<number | null>(null);
+  const [entryNames, setEntryNames] = useState<Record<number, string>>({});
+  const [organizerId, setOrganizerId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -44,6 +48,44 @@ export default function FixturesByCategory() {
       .order("round_number", { ascending: true })
       .order("index_in_round", { ascending: true });
     setMatches((m as any[]) || []);
+
+    const idsSet = new Set<number>();
+    ((m as any[]) || []).forEach((row: any) => {
+      if (row.entry1_id) idsSet.add(row.entry1_id as number);
+      if (row.entry2_id) idsSet.add(row.entry2_id as number);
+    });
+    const ids = Array.from(idsSet);
+    if (ids.length > 0) {
+      const { data: members } = await supabase
+        .from("entry_members")
+        .select("entry_id, display_name, profile:profile_id(id, username, full_name)")
+        .in("entry_id", ids);
+      const map: Record<number, string[]> = {};
+      for (const row of (members as any[]) || []) {
+        const entryId = row.entry_id as number;
+        const prof = row.profile as any;
+        const fallback = prof?.id ? `Player ${String(prof.id).slice(0, 6)}` : "Player";
+        const nameRaw = row.display_name || prof?.full_name || prof?.username || fallback;
+        const name = String(nameRaw).trim();
+        if (!map[entryId]) map[entryId] = [];
+        map[entryId].push(name);
+      }
+      const flat: Record<number, string> = {};
+      Object.keys(map).forEach((k) => {
+        const ek = Number(k);
+        flat[ek] = map[ek].join(" / ");
+      });
+      setEntryNames(flat);
+    } else {
+      setEntryNames({});
+    }
+
+    const { data: tdata } = await supabase
+      .from("tournaments")
+      .select("id, organizer_id")
+      .eq("id", tid)
+      .maybeSingle();
+    setOrganizerId((tdata as any)?.organizer_id ?? null);
 
     const first = (r as any[])?.[0]?.round_number ?? null;
     setActiveRound(first);
@@ -93,7 +135,8 @@ export default function FixturesByCategory() {
 
   function labelEntry(id: number | null) {
     if (!id) return 'Bye';
-    return `Entry #${id}`;
+    const name = entryNames[id];
+    return name ? name : `Entry #${id}`;
   }
 
   function statusBadge(s: string) {
@@ -144,6 +187,13 @@ export default function FixturesByCategory() {
                 ) : null}
                 {m.score_json ? (
                   <Text className="text-xs text-gray-700 mt-1">Score: {JSON.stringify(m.score_json)}</Text>
+                ) : null}
+                {organizerId && session?.user?.id === organizerId ? (
+                  <View className="mt-3 self-end">
+                    <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={() => router.push({ pathname: "/host/[id]/matches/[matchId]", params: { id: String(tid), matchId: String(m.id) } } as any)}>
+                      <Text className="text-gray-800">Edit</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : null}
               </View>
             ))}
