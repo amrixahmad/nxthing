@@ -151,7 +151,17 @@ export default function FixturesByCategory() {
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
-      <Stack.Screen options={{ title: `Fixtures` }} />
+      <Stack.Screen
+        options={{
+          title: `Fixtures`,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <TouchableOpacity className="px-3 py-2" onPress={() => router.replace({ pathname: "/tournaments/[id]/categories", params: { id: String(tid) } } as any)}>
+              <Text className="text-blue-600">Back</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <View className="px-4 mt-6">
         {loading ? (
           <View className="items-center justify-center py-10"><ActivityIndicator /></View>
