@@ -1,0 +1,155 @@
+import { useEffect, useMemo, useState } from "react";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { supabase } from "@/lib/supabase";
+
+type RoundRow = { round_number: number; name: string | null };
+
+type MatchRow = {
+  id: number;
+  round_number: number;
+  index_in_round: number;
+  entry1_id: number | null;
+  entry2_id: number | null;
+  winner_entry_id: number | null;
+  status: string;
+  scheduled_at: string | null;
+  court: string | null;
+  score_json: any | null;
+};
+
+export default function FixturesByCategory() {
+  const params = useLocalSearchParams<{ id: string; categoryId: string }>();
+  const tid = Number(params.id);
+  const cid = Number(params.categoryId);
+
+  const [loading, setLoading] = useState(true);
+  const [rounds, setRounds] = useState<RoundRow[]>([]);
+  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [activeRound, setActiveRound] = useState<number | null>(null);
+
+  async function load() {
+    setLoading(true);
+    const { data: r } = await supabase
+      .from("rounds")
+      .select("round_number,name")
+      .eq("category_id", cid)
+      .order("round_number", { ascending: true });
+    setRounds((r as any[]) || []);
+
+    const { data: m } = await supabase
+      .from("matches")
+      .select("id,round_number,index_in_round,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json")
+      .eq("category_id", cid)
+      .order("round_number", { ascending: true })
+      .order("index_in_round", { ascending: true });
+    setMatches((m as any[]) || []);
+
+    const first = (r as any[])?.[0]?.round_number ?? null;
+    setActiveRound(first);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (!cid) return;
+    load();
+    const channel = supabase
+      .channel(`fixtures-cat-${cid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches', filter: `category_id=eq.${cid}` },
+        (payload) => {
+          setMatches((prev) => {
+            if (payload.eventType === 'DELETE') {
+              return prev.filter((m) => m.id !== (payload.old as any)?.id);
+            }
+            const row = (payload.new as any) as MatchRow;
+            const exists = prev.findIndex((m) => m.id === row.id);
+            if (exists >= 0) {
+              const copy = prev.slice();
+              copy[exists] = row;
+              return copy;
+            }
+            return [...prev, row].sort((a,b) => a.round_number - b.round_number || a.index_in_round - b.index_in_round);
+          });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [cid]);
+
+  const roundsSorted = useMemo(() => (rounds || []).slice().sort((a,b) => a.round_number - b.round_number), [rounds]);
+  const matchesByRound = useMemo(() => {
+    const map: Record<number, MatchRow[]> = {};
+    for (const m of matches) {
+      if (!map[m.round_number]) map[m.round_number] = [];
+      map[m.round_number].push(m);
+    }
+    for (const k of Object.keys(map)) map[Number(k)].sort((a,b) => a.index_in_round - b.index_in_round);
+    return map;
+  }, [matches]);
+
+  function labelEntry(id: number | null) {
+    if (!id) return 'Bye';
+    return `Entry #${id}`;
+  }
+
+  function statusBadge(s: string) {
+    const cls = s === 'bye' ? 'bg-gray-100' : s === 'completed' ? 'bg-green-100' : s === 'in_progress' ? 'bg-blue-100' : 'bg-gray-100';
+    const txt = s === 'bye' ? 'Bye' : s === 'completed' ? 'Completed' : s === 'in_progress' ? 'Live' : 'Pending';
+    return (
+      <View className={`px-2 py-1 rounded ${cls}`}>
+        <Text className={s === 'completed' ? 'text-green-800 text-xs' : s === 'in_progress' ? 'text-blue-800 text-xs' : 'text-gray-800 text-xs'}>{txt}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView className="flex-1 bg-gray-50">
+      <Stack.Screen options={{ title: `Fixtures` }} />
+      <View className="px-4 mt-6">
+        {loading ? (
+          <View className="items-center justify-center py-10"><ActivityIndicator /></View>
+        ) : roundsSorted.length === 0 ? (
+          <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <Text className="text-gray-700">Bracket not generated yet.</Text>
+          </View>
+        ) : (
+          <View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+              <View className="flex-row">
+                {roundsSorted.map((r) => (
+                  <TouchableOpacity key={r.round_number} className={`mr-2 px-3 py-2 rounded-lg border ${activeRound === r.round_number ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setActiveRound(r.round_number)}>
+                    <Text className={activeRound === r.round_number ? 'text-white text-sm' : 'text-gray-800 text-sm'}>{r.name || `Round ${r.round_number}`}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {(matchesByRound[activeRound || 0] || []).map((m) => (
+              <View key={m.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-3">
+                <View className="flex-row items-center justify-between mb-2">
+                  <Text className="text-sm text-gray-700">Match {m.index_in_round}</Text>
+                  {statusBadge(m.status)}
+                </View>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-base text-gray-900 mr-2" numberOfLines={1}>{labelEntry(m.entry1_id)}</Text>
+                  <Text className="text-gray-500">vs</Text>
+                  <Text className="text-base text-gray-900 ml-2" numberOfLines={1}>{labelEntry(m.entry2_id)}</Text>
+                </View>
+                {m.scheduled_at || m.court ? (
+                  <Text className="text-xs text-gray-600 mt-2">{m.scheduled_at ? new Date(m.scheduled_at).toLocaleString() : ''}{m.scheduled_at && m.court ? ' • ' : ''}{m.court ? `Court ${m.court}` : ''}</Text>
+                ) : null}
+                {m.score_json ? (
+                  <Text className="text-xs text-gray-700 mt-1">Score: {JSON.stringify(m.score_json)}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+}

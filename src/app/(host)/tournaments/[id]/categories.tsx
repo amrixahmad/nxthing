@@ -516,7 +516,13 @@ export default function ManageCategories() {
                 </View>
                 <View className="flex-row items-center">
                   <TouchableOpacity
-                    className={`px-3 py-2 rounded-lg ${saving ? "bg-gray-200" : "bg-blue-50"} border border-blue-300`}
+                    className="px-3 py-2 rounded-lg border border-gray-300"
+                    onPress={() => router.push({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(c.id) } } as any)}
+                  >
+                    <Text className="text-gray-800">View Fixtures</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className={`ml-2 px-3 py-2 rounded-lg ${saving ? "bg-gray-200" : "bg-blue-50"} border border-blue-300`}
                     onPress={() => generateBracket(c.id)}
                     disabled={saving}
                   >
