@@ -217,6 +217,33 @@ export default function ManageCategories() {
     }
   }
 
+  async function generateBracket(categoryId: number) {
+    try {
+      if (!tournament) return;
+      // Pre-check: registration_end_date must be present and in the past
+      if (!tournament.registration_end_date) {
+        Alert.alert("Registration not closed", "Set and close the registration window first");
+        return;
+      }
+      const ended = new Date(tournament.registration_end_date).getTime() <= Date.now();
+      if (!ended) {
+        Alert.alert("Registration still open", "You can generate brackets after registration closes");
+        return;
+      }
+      setSaving(true);
+      const { data, error } = await supabase.functions.invoke("generate-bracket", {
+        body: { category_id: categoryId },
+      });
+      if (error) throw error as any;
+      const msg = (data as any)?.message || "Bracket generated";
+      toast.show({ type: "success", message: msg });
+    } catch (e) {
+      if (e instanceof Error) Alert.alert("Error", e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function toggleRegistration(open: boolean) {
     try {
       if (!tournament) return;
@@ -487,9 +514,18 @@ export default function ManageCategories() {
                   <Text className="text-base text-gray-900">{c.name}</Text>
                   <Text className="text-xs text-gray-600">{c.participation_type} • USD {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}</Text>
                 </View>
-                <TouchableOpacity className="px-3 py-2 rounded-lg border border-red-300" onPress={() => removeCategory(c.id)}>
-                  <Text className="text-red-700">Delete</Text>
-                </TouchableOpacity>
+                <View className="flex-row items-center">
+                  <TouchableOpacity
+                    className={`px-3 py-2 rounded-lg ${saving ? "bg-gray-200" : "bg-blue-50"} border border-blue-300`}
+                    onPress={() => generateBracket(c.id)}
+                    disabled={saving}
+                  >
+                    <Text className={`${saving ? "text-gray-500" : "text-blue-700"}`}>Generate Bracket</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="ml-2 px-3 py-2 rounded-lg border border-red-300" onPress={() => removeCategory(c.id)}>
+                    <Text className="text-red-700">Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
