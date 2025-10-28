@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -20,7 +21,7 @@ type MatchRow = {
 };
 
 export default function FixturesByCategory() {
-  const params = useLocalSearchParams<{ id: string; categoryId: string }>();
+  const params = useLocalSearchParams<{ id: string; categoryId: string; initialRound?: string }>();
   const tid = Number(params.id);
   const cid = Number(params.categoryId);
   const { session } = useSession();
@@ -87,8 +88,13 @@ export default function FixturesByCategory() {
       .maybeSingle();
     setOrganizerId((tdata as any)?.organizer_id ?? null);
 
-    const first = (r as any[])?.[0]?.round_number ?? null;
-    setActiveRound(first);
+    if (activeRound == null) {
+      const first = (r as any[])?.[0]?.round_number ?? null;
+      const irStr = (params as any)?.initialRound;
+      const ir = irStr !== undefined && irStr !== null && irStr !== '' ? Number(irStr) : NaN;
+      const initial = Number.isFinite(ir) && ir > 0 ? ir : first;
+      setActiveRound(initial);
+    }
     setLoading(false);
   }
 
@@ -121,6 +127,13 @@ export default function FixturesByCategory() {
       supabase.removeChannel(channel);
     };
   }, [cid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (cid) load();
+      return () => {};
+    }, [cid])
+  );
 
   const roundsSorted = useMemo(() => (rounds || []).slice().sort((a,b) => a.round_number - b.round_number), [rounds]);
   const matchesByRound = useMemo(() => {
@@ -157,6 +170,12 @@ export default function FixturesByCategory() {
     } catch {
       return [];
     }
+  }
+
+  function nameStyleFor(entryId: number | null, winnerId: number | null, status: string): string {
+    if (status === 'completed' && winnerId && entryId && entryId === winnerId) return 'text-green-700 font-semibold';
+    if (status === 'completed' && winnerId) return 'text-gray-500';
+    return 'text-gray-900';
   }
 
   return (
@@ -198,9 +217,9 @@ export default function FixturesByCategory() {
                   {statusBadge(m.status)}
                 </View>
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-base text-gray-900 mr-2" numberOfLines={1}>{labelEntry(m.entry1_id)}</Text>
+                  <Text className={`text-base mr-2 ${nameStyleFor(m.entry1_id, m.winner_entry_id, m.status)}`} numberOfLines={1}>{labelEntry(m.entry1_id)}</Text>
                   <Text className="text-gray-500">vs</Text>
-                  <Text className="text-base text-gray-900 ml-2" numberOfLines={1}>{labelEntry(m.entry2_id)}</Text>
+                  <Text className={`text-base ml-2 ${nameStyleFor(m.entry2_id, m.winner_entry_id, m.status)}`} numberOfLines={1}>{labelEntry(m.entry2_id)}</Text>
                 </View>
                 {m.scheduled_at || m.court ? (
                   <Text className="text-xs text-gray-600 mt-2">{m.scheduled_at ? new Date(m.scheduled_at).toLocaleString() : ''}{m.scheduled_at && m.court ? ' • ' : ''}{m.court ? `Court ${m.court}` : ''}</Text>
@@ -211,11 +230,20 @@ export default function FixturesByCategory() {
                   return (
                     <View className="mt-2">
                       <View className="flex-row flex-wrap -m-1">
-                        {games.map((g: { p1: number; p2: number }, idx: number) => (
-                          <View key={idx} className="m-1 px-2 py-1 rounded bg-gray-100">
-                            <Text className="text-xs text-gray-800">{`G${idx + 1} ${g.p1}-${g.p2}`}</Text>
-                          </View>
-                        ))}
+                        {games.map((g: { p1: number; p2: number }, idx: number) => {
+                          const p1Win = g.p1 > g.p2;
+                          const p2Win = g.p2 > g.p1;
+                          return (
+                            <View key={idx} className="m-1 px-2 py-1 rounded bg-gray-100">
+                              <View className="flex-row items-center">
+                                <Text className="text-[10px] text-gray-600 mr-1">{`G${idx + 1}`}</Text>
+                                <Text className={`text-xs ${p1Win ? 'text-green-700 font-semibold' : 'text-gray-800'}`}>{g.p1}</Text>
+                                <Text className="text-xs text-gray-600 mx-1">-</Text>
+                                <Text className={`text-xs ${p2Win ? 'text-green-700 font-semibold' : 'text-gray-800'}`}>{g.p2}</Text>
+                              </View>
+                            </View>
+                          );
+                        })}
                       </View>
                     </View>
                   );
