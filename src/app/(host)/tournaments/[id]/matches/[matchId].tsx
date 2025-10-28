@@ -57,6 +57,18 @@ export default function HostMatchDetail() {
         .maybeSingle();
       const mm = (m as any) as Match | null;
       if (!mm) throw new Error("Match not found");
+      // Organizer guard
+      const { data: tOrg } = await supabase
+        .from("tournaments")
+        .select("id, organizer_id")
+        .eq("id", mm.tournament_id)
+        .maybeSingle();
+      const orgId = (tOrg as any)?.organizer_id as string | null | undefined;
+      if (orgId && session?.user?.id && orgId !== session.user.id) {
+        router.replace({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(mm.category_id) } } as any);
+        setLoading(false);
+        return;
+      }
       setMatch(mm);
       setStatus(mm.status);
       setCourt(mm.court || "");

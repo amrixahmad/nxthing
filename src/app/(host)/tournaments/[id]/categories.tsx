@@ -605,7 +605,7 @@ export default function ManageCategories() {
               </View>
             ) : null}
           </View>
-          <View className="flex-row space-x-2">
+          <View className="flex-row space-x-2 items-center">
             <TouchableOpacity
               className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
               onPress={saveWindow}
@@ -614,25 +614,28 @@ export default function ManageCategories() {
               <Text className={`text-center font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Save Window</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
+              className={`px-4 py-3 rounded-lg ${saving || items.length === 0 ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
               onPress={openNowUntilStart}
-              disabled={saving}
+              disabled={saving || items.length === 0}
             >
-              <Text className={`text-center font-semibold ${saving ? "text-gray-300" : "text-white"}`}>Open Now Until Start Date</Text>
+              <Text className={`text-center font-semibold ${saving || items.length === 0 ? "text-gray-300" : "text-white"}`}>Open Now Until Start Date</Text>
             </TouchableOpacity>
+            {items.length === 0 ? (
+              <Text className="ml-2 text-xs text-gray-600">Add at least one category to enable opening registration.</Text>
+            ) : null}
           </View>
         </View>
 
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
           <Text className="text-base font-semibold text-gray-900 mb-2">Registration</Text>
           <Text className="text-sm text-gray-600 mb-3">Status: {tournament?.status || "draft"}</Text>
-          <View className="flex-row space-x-2">
+          <View className="flex-row space-x-2 items-center">
             <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
+              className={`px-4 py-3 rounded-lg ${saving || items.length === 0 ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
               onPress={() => toggleRegistration(true)}
-              disabled={saving}
+              disabled={saving || items.length === 0}
             >
-              <Text className={`text-center font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Open Registration</Text>
+              <Text className={`text-center font-semibold ${saving || items.length === 0 ? "text-gray-500" : "text-white"}`}>Open Registration</Text>
             </TouchableOpacity>
             <TouchableOpacity
               className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-gray-600 active:bg-gray-700"}`}
@@ -641,6 +644,9 @@ export default function ManageCategories() {
             >
               <Text className={`text-center font-semibold ${saving ? "text-gray-300" : "text-white"}`}>Close Registration</Text>
             </TouchableOpacity>
+            {items.length === 0 ? (
+              <Text className="ml-2 text-xs text-gray-600">Add a category first to enable opening registration.</Text>
+            ) : null}
           </View>
         </View>
 
