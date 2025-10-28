@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Stack, Link } from "expo-router";
 import { formatDateTimeLocal } from "@/utils/datetime";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+import { useFocusEffect } from "@react-navigation/native";
 
 type Cat = { id: number; name?: string | null; registration_fee?: number | null };
 type Tour = {
@@ -61,6 +62,27 @@ export default function BrowseTournaments() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return () => {};
+    }, [])
+  );
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("browse-tournaments")
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tournaments' },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // No direct Register/Pay actions here. This page only links to tournament details.
 
