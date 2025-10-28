@@ -39,6 +39,7 @@ export default function HostMatchDetail() {
   const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
   const [winner, setWinner] = useState<0 | 1 | 2 | null>(null); // 0 none, 1 p1, 2 p2
+  const [games, setGames] = useState<Array<{ p1: number; p2: number }>>([]);
 
   async function load() {
     try {
@@ -64,19 +65,28 @@ export default function HostMatchDetail() {
       if (mm.winner_entry_id && mm.entry1_id && mm.winner_entry_id === mm.entry1_id) setWinner(1);
       else if (mm.winner_entry_id && mm.entry2_id && mm.winner_entry_id === mm.entry2_id) setWinner(2);
       else setWinner(0);
+      try {
+        const sj = Array.isArray(mm.score_json) ? mm.score_json : (mm.score_json ? JSON.parse(mm.score_json as any) : []);
+        if (Array.isArray(sj)) setGames(sj.map((g: any) => ({ p1: Number(g?.p1 || 0), p2: Number(g?.p2 || 0) })));
+        else setGames([]);
+      } catch {
+        setGames([]);
+      }
 
       // Load names
       const ids: number[] = [mm.entry1_id || 0, mm.entry2_id || 0].filter(Boolean) as number[];
       if (ids.length > 0) {
         const { data: mems } = await supabase
           .from("entry_members")
-          .select("entry_id, profile:profile_id(id, username, full_name)")
+          .select("entry_id, display_name, profile:profile_id(id, username, full_name)")
           .in("entry_id", ids);
         const map: Record<number, string[]> = {};
         for (const r of (mems as any[]) || []) {
           const entryId = r.entry_id as number;
           const prof = r.profile as any;
-          const name = (prof?.full_name || prof?.username || String(prof?.id || "")).trim();
+          const fallback = prof?.id ? `Player ${String(prof.id).slice(0, 6)}` : "Player";
+          const nameRaw = r.display_name || prof?.full_name || prof?.username || fallback;
+          const name = String(nameRaw).trim();
           if (!map[entryId]) map[entryId] = [];
           map[entryId].push(name);
         }
@@ -120,7 +130,7 @@ export default function HostMatchDetail() {
 
       const { error: uErr } = await supabase
         .from("matches")
-        .update({ status, court: court || null, scheduled_at: scheduledAt, winner_entry_id: winnerId })
+        .update({ status, court: court || null, scheduled_at: scheduledAt, winner_entry_id: winnerId, score_json: games })
         .eq("id", match.id);
       if (uErr) throw uErr;
 
@@ -162,6 +172,44 @@ export default function HostMatchDetail() {
                     <Text className={status === s ? 'text-white' : 'text-gray-800'}>{s}</Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+
+              <Text className="text-base font-semibold text-gray-900 mb-2">Score</Text>
+              {games.map((g, idx) => (
+                <View key={idx} className="flex-row items-center mb-2">
+                  <Text className="w-16 text-gray-700">Game {idx+1}</Text>
+                  <TextInput
+                    className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white mr-2"
+                    keyboardType="numeric"
+                    value={String(g.p1)}
+                    onChangeText={(t) => {
+                      const v = Math.max(0, Number(t || 0));
+                      setGames((arr) => arr.map((it, i) => i === idx ? { ...it, p1: v } : it));
+                    }}
+                    placeholder="P1"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  <Text className="mx-1">-</Text>
+                  <TextInput
+                    className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white ml-2"
+                    keyboardType="numeric"
+                    value={String(g.p2)}
+                    onChangeText={(t) => {
+                      const v = Math.max(0, Number(t || 0));
+                      setGames((arr) => arr.map((it, i) => i === idx ? { ...it, p2: v } : it));
+                    }}
+                    placeholder="P2"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  <TouchableOpacity className="ml-2 px-3 py-2 rounded-lg border border-red-300" onPress={() => setGames((arr) => arr.filter((_, i) => i !== idx))}>
+                    <Text className="text-red-700">Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <View className="mb-4">
+                <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300 self-start" onPress={() => setGames((arr) => [...arr, { p1: 0, p2: 0 }])}>
+                  <Text className="text-gray-800">Add Game</Text>
+                </TouchableOpacity>
               </View>
 
               <Text className="text-base font-semibold text-gray-900 mb-2">Winner</Text>

@@ -149,6 +149,16 @@ export default function FixturesByCategory() {
     );
   }
 
+  function gamesFromScore(score: any): Array<{ p1: number; p2: number }> {
+    try {
+      const parsed = Array.isArray(score) ? score : (score ? JSON.parse(score as any) : []);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((g: any) => ({ p1: Number(g?.p1 || 0), p2: Number(g?.p2 || 0) }));
+    } catch {
+      return [];
+    }
+  }
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       <Stack.Screen
@@ -195,12 +205,27 @@ export default function FixturesByCategory() {
                 {m.scheduled_at || m.court ? (
                   <Text className="text-xs text-gray-600 mt-2">{m.scheduled_at ? new Date(m.scheduled_at).toLocaleString() : ''}{m.scheduled_at && m.court ? ' • ' : ''}{m.court ? `Court ${m.court}` : ''}</Text>
                 ) : null}
-                {m.score_json ? (
-                  <Text className="text-xs text-gray-700 mt-1">Score: {JSON.stringify(m.score_json)}</Text>
+                {(() => {
+                  const games = gamesFromScore(m.score_json);
+                  if (games.length === 0) return null;
+                  return (
+                    <View className="mt-2">
+                      <View className="flex-row flex-wrap -m-1">
+                        {games.map((g: { p1: number; p2: number }, idx: number) => (
+                          <View key={idx} className="m-1 px-2 py-1 rounded bg-gray-100">
+                            <Text className="text-xs text-gray-800">{`G${idx + 1} ${g.p1}-${g.p2}`}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })()}
+                {m.winner_entry_id ? (
+                  <Text className="text-xs text-gray-700 mt-1">Winner: {labelEntry(m.winner_entry_id)}</Text>
                 ) : null}
                 {organizerId && session?.user?.id === organizerId ? (
                   <View className="mt-3 self-end">
-                    <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={() => router.push({ pathname: "/host/[id]/matches/[matchId]", params: { id: String(tid), matchId: String(m.id) } } as any)}>
+                    <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={() => router.push({ pathname: "/tournaments/[id]/matches/[matchId]", params: { id: String(tid), matchId: String(m.id) } } as any)}>
                       <Text className="text-gray-800">Edit</Text>
                     </TouchableOpacity>
                   </View>

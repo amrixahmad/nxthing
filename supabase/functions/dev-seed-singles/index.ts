@@ -13,6 +13,9 @@ type Body = {
   venue?: string;
   organizer_id?: string; // optional organizer for tournament
   seed_tag?: string; // for cleanup
+  participation_type?: "singles" | "doubles" | "team";
+  members_per_team?: number;
+  category_name?: string;
 };
 
 function makeSeedTag() {
@@ -134,26 +137,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (tErr) throw tErr;
     const tournamentId = (tIns as any).id as number;
 
-    // Create singles category
+    // Create category
+    const ptype = (body.participation_type as any) === "doubles" ? "doubles" : (body.participation_type as any) === "team" ? "team" : "singles";
+    const teamSizeRaw = Number(body.members_per_team ?? (ptype === "doubles" ? 2 : 1));
+    const teamSize = Math.max(1, Math.min(teamSizeRaw || 1, 10));
+    const catName = (body.category_name || (ptype === "doubles" ? "Men's Doubles" : ptype === "team" ? "Team" : "Men's Singles"));
     const { data: cIns, error: cErr } = await supabase
       .from("tournament_categories")
       .insert({
         tournament_id: tournamentId,
-        name: "Men's Singles",
-        participation_type: "singles",
+        name: catName,
+        participation_type: ptype,
         registration_fee: 20,
         max_teams: 128,
-        members_per_team_min: 1,
-        members_per_team_max: 1,
+        members_per_team_min: teamSize,
+        members_per_team_max: teamSize,
       })
       .select("id")
       .single();
     if (cErr) throw cErr;
     const categoryId = (cIns as any).id as number;
 
-    // Create N users and entries
+    // Create users
+    const totalUsers = entries * teamSize;
     let createdUsers: string[] = [];
-    for (let i = 0; i < entries; i++) {
+    let createdUsernames: string[] = [];
+    for (let i = 0; i < totalUsers; i++) {
       const username = `seed-${seedTag}-${String(i + 1).padStart(2, "0")}`;
       const email = `${username}@dev.local`;
       const password = "Password!123";
@@ -172,21 +181,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
       const userId: string = userRes.user.id;
       createdUsers.push(userId);
+      createdUsernames.push(username);
 
-      // Ensure profile exists and has username (in case signup trigger is blocked)
       const { error: upErr } = await supabase
         .from("profiles")
         .upsert({ id: userId, username, full_name: username, updated_at: new Date().toISOString() });
       if (upErr) {
         console.warn("profiles upsert warning", upErr.message);
       }
+    }
 
-      // Insert entry as paid+accepted
+    // Create entries and members
+    for (let e = 0; e < entries; e++) {
+      const base = e * teamSize;
+      const createdBy = createdUsers[base];
       const { data: eIns, error: eErr } = await supabase
         .from("entries")
         .insert({
           category_id: categoryId,
-          created_by: userId,
+          created_by: createdBy,
           payment_currency: "usd",
           payment_amount: 20.0,
           payment_status: "paid",
@@ -199,9 +212,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (eErr) throw eErr;
       const entryId = (eIns as any).id as number;
 
-      // Add member
-      const { error: mErr } = await supabase.from("entry_members").insert({ entry_id: entryId, profile_id: userId, display_name: username });
-      if (mErr) throw mErr;
+      for (let j = 0; j < teamSize; j++) {
+        const uid = createdUsers[base + j];
+        const uname = createdUsernames[base + j];
+        const { error: mErr } = await supabase.from("entry_members").insert({ entry_id: entryId, profile_id: uid, display_name: uname });
+        if (mErr) throw mErr;
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, seed_tag: seedTag, tournament_id: tournamentId, category_id: categoryId, created_users: createdUsers.length }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
