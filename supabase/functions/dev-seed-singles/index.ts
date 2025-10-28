@@ -16,6 +16,7 @@ type Body = {
   participation_type?: "singles" | "doubles" | "team";
   members_per_team?: number;
   category_name?: string;
+  max_teams?: number; // optional capacity override
 };
 
 function makeSeedTag() {
@@ -44,6 +45,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const body = (await req.json().catch(() => ({}))) as Body;
     const op = body.op || "create";
+    const seedTag = makeSeedTag();
 
     if (op === "cleanup") {
       const seedTag = (body.seed_tag || "").trim();
@@ -97,19 +99,48 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const title = body.title || "Uni Reunion Tourney";
     const venue = body.venue || "UM Pickelball court";
     const organizerId = (body.organizer_id || "").trim();
-
-    // Determine organizer: use provided or fall back to most recent profile user
-    let organizer_uuid: string | null = organizerId || null;
+    let organizer_uuid: string | null = null;
+    let organizer_email: string | null = null;
+    let organizer_username: string | null = null;
+    if (organizerId) {
+      const { data: chk } = await supabase.from("profiles").select("id").eq("id", organizerId).maybeSingle();
+      if ((chk as any)?.id) {
+        organizer_uuid = organizerId;
+      }
+    }
     if (!organizer_uuid) {
-      const { data: prof, error: pErr } = await supabase.from("profiles").select("id").order("updated_at", { ascending: false }).order("created_at", { ascending: false }).limit(1);
+      const { data: prof, error: pErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .order("updated_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
       if (pErr) throw pErr;
       organizer_uuid = (prof as any[])?.[0]?.id || null;
     }
+    // Auto-create an organizer in dev if still not found
     if (!organizer_uuid) {
-      return new Response(JSON.stringify({ error: "No organizer found; pass organizer_id" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const orgUser = `seed-org-${seedTag}`;
+      const email = `${orgUser}@dev.local`;
+      const password = "Password!123";
+      const { data: createOrg, error: orgErr } = await (supabase as any).auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { username: orgUser, full_name: orgUser },
+      });
+      if (orgErr) {
+        return new Response(JSON.stringify({ error: "Failed to create organizer user", details: orgErr?.message || orgErr }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      organizer_uuid = createOrg.user.id as string;
+      organizer_email = email;
+      organizer_username = orgUser;
+      const { error: upOrg } = await supabase.from("profiles").upsert({ id: organizer_uuid, username: orgUser, full_name: orgUser, updated_at: new Date().toISOString() });
+      if (upOrg) {
+        // non-fatal
+        console.warn("organizer profile upsert warning", upOrg.message);
+      }
     }
-
-    const seedTag = makeSeedTag();
 
     // Create tournament (registration closed yesterday to allow bracket gen)
     const now = new Date();
@@ -118,10 +149,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const regStart = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
     const regEnd = new Date(now.getTime() - 1 * 24 * 3600 * 1000);
 
+    // Organizer display name
+    let organizerDisplay = (organizer_uuid || '').slice(0, 8);
+    const { data: orgProf } = await supabase
+      .from("profiles")
+      .select("full_name, username")
+      .eq("id", organizer_uuid)
+      .maybeSingle();
+    organizerDisplay = (orgProf as any)?.full_name || (orgProf as any)?.username || organizerDisplay;
+
     const { data: tIns, error: tErr } = await supabase
       .from("tournaments")
       .insert({
         organizer_id: organizer_uuid,
+        organizer_display_name: organizerDisplay,
         title,
         description: `seed:${seedTag}`,
         venue_name: venue,
@@ -129,7 +170,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         end_date: end.toISOString(),
         registration_start_date: regStart.toISOString(),
         registration_end_date: regEnd.toISOString(),
-        status: "draft",
+        status: "registration_open",
         format: "single_elimination",
       })
       .select("id")
@@ -142,6 +183,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const teamSizeRaw = Number(body.members_per_team ?? (ptype === "doubles" ? 2 : 1));
     const teamSize = Math.max(1, Math.min(teamSizeRaw || 1, 10));
     const catName = (body.category_name || (ptype === "doubles" ? "Men's Doubles" : ptype === "team" ? "Team" : "Men's Singles"));
+    // Derive max_teams: prefer explicit body.max_teams, else next power of two >= entries
+    const requestedMax = Number((body as any)?.max_teams);
+    const nextPow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
+    let maxTeams = Number.isFinite(requestedMax) && requestedMax > 0 ? Math.floor(requestedMax) : nextPow2(entries);
+    if (!Number.isFinite(maxTeams) || maxTeams < entries) maxTeams = nextPow2(entries);
+    maxTeams = Math.min(Math.max(2, maxTeams), 512);
+
     const { data: cIns, error: cErr } = await supabase
       .from("tournament_categories")
       .insert({
@@ -149,7 +197,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         name: catName,
         participation_type: ptype,
         registration_fee: 20,
-        max_teams: 128,
+        max_teams: maxTeams,
         members_per_team_min: teamSize,
         members_per_team_max: teamSize,
       })
@@ -220,7 +268,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, seed_tag: seedTag, tournament_id: tournamentId, category_id: categoryId, created_users: createdUsers.length }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        seed_tag: seedTag,
+        tournament_id: tournamentId,
+        category_id: categoryId,
+        created_users: createdUsers.length,
+        organizer_id: organizer_uuid,
+        organizer_email: organizer_email || null,
+        organizer_username: organizer_username || null,
+        organizer_password: organizer_email ? "Password!123" : null,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: (err as any)?.message || "Internal error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

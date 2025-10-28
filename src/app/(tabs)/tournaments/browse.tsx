@@ -9,6 +9,7 @@ type Cat = { id: number; name?: string | null; registration_fee?: number | null 
 type Tour = {
   id: number;
   title?: string | null;
+  organizer_display_name?: string | null;
   status?: string | null;
   registration_start_date?: string | null;
   registration_end_date?: string | null;
@@ -27,12 +28,13 @@ export default function BrowseTournaments() {
     setLoading(true);
     const { data } = await supabase
       .from("tournaments")
-      .select("id, title, status, registration_start_date, registration_end_date, created_at, tcs:tournament_categories(id, name, registration_fee)")
-      .eq("status", "registration_open")
+      .select("id, title, organizer_display_name, status, registration_start_date, registration_end_date, created_at, tcs:tournament_categories(id, name, registration_fee)")
+      .neq("status", "draft")
       .order("created_at", { ascending: false });
     const normalized: Tour[] = ((data as any[]) || []).map((r: any) => ({
       id: r.id,
       title: r.title ?? null,
+      organizer_display_name: r.organizer_display_name ?? null,
       status: r.status ?? null,
       registration_start_date: r.registration_start_date ?? null,
       registration_end_date: r.registration_end_date ?? null,
@@ -73,7 +75,7 @@ export default function BrowseTournaments() {
           </View>
         ) : tournaments.length === 0 ? (
           <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <Text className="text-gray-700">No tournaments open for registration.</Text>
+            <Text className="text-gray-700">No tournaments to show.</Text>
           </View>
         ) : (
           tournaments.map((t) => (
@@ -82,12 +84,22 @@ export default function BrowseTournaments() {
                 <Text className="text-base font-semibold text-gray-900">{t.title || `Tournament #${t.id}`}</Text>
                 <Text className="text-[10px] text-gray-500">Created {formatDateTimeLocal(t.created_at || null)}</Text>
               </View>
+              {t.organizer_display_name ? (
+                <Text className="text-xs text-gray-700 mt-1">Host: {t.organizer_display_name}</Text>
+              ) : null}
               <View className="mt-2">
-                <View className={`self-start px-2 py-1 rounded ${(t.status === 'registration_open') ? 'bg-green-100' : 'bg-gray-100'}`}>
-                  <Text className={`text-xs ${(t.status === 'registration_open') ? 'text-green-800' : 'text-gray-800'}`}>
-                    {t.status === 'registration_open' ? 'Registration Open' : 'Registration Closed'}
-                  </Text>
-                </View>
+                {(() => {
+                  const s = t.registration_start_date ? new Date(t.registration_start_date) : null;
+                  const e = t.registration_end_date ? new Date(t.registration_end_date) : null;
+                  const open = !!(s && e && new Date() >= s && new Date() <= e);
+                  return (
+                    <View className={`self-start px-2 py-1 rounded ${open ? 'bg-green-100' : 'bg-gray-100'}`}>
+                      <Text className={`text-xs ${open ? 'text-green-800' : 'text-gray-800'}`}>
+                        {open ? 'Registration Open' : 'Registration Closed'}
+                      </Text>
+                    </View>
+                  );
+                })()}
                 <Text className="text-xs text-gray-600 mt-1">
                   {t.registration_start_date && t.registration_end_date
                     ? `Window: ${formatDateTimeLocal(t.registration_start_date)} → ${formatDateTimeLocal(t.registration_end_date)}`

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
 import { formatDateTimeLocal } from "@/utils/datetime";
 
-type Cat = { id: number; name?: string | null; registration_fee?: number | null };
+type Cat = { id: number; name?: string | null; registration_fee?: number | null; max_teams?: number | null };
 
 type Tour = {
   id: number;
@@ -16,6 +16,7 @@ type Tour = {
   registration_start_date?: string | null;
   registration_end_date?: string | null;
   status?: string | null;
+  organizer_display_name?: string | null;
   categories: Cat[];
 };
 
@@ -27,6 +28,7 @@ export default function TournamentDetails() {
   const [loading, setLoading] = useState(true);
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<Record<number, { id: number; payment_status: string }>>({});
+  const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<"error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
@@ -45,8 +47,8 @@ export default function TournamentDetails() {
     const { data: tdata } = await supabase
       .from("tournaments")
       .select(
-        `id, title, venue_name, start_date, registration_start_date, registration_end_date, status,
-         categories:tournament_categories ( id, name, registration_fee )`
+        `id, title, venue_name, start_date, registration_start_date, registration_end_date, status, organizer_display_name,
+         categories:tournament_categories ( id, name, registration_fee, max_teams )`
       )
       .eq("id", tid)
       .maybeSingle();
@@ -61,6 +63,7 @@ export default function TournamentDetails() {
           registration_start_date: t.registration_start_date ?? null,
           registration_end_date: t.registration_end_date ?? null,
           status: t.status ?? null,
+          organizer_display_name: t.organizer_display_name ?? null,
           categories: Array.isArray(t.categories) ? t.categories : [],
         }
       : null;
@@ -79,6 +82,19 @@ export default function TournamentDetails() {
         }
       });
       setEntryByCategory(map);
+    }
+
+    if (details) {
+      const mapCounts: Record<number, number> = {};
+      for (const c of details.categories) {
+        const { count } = await supabase
+          .from("entries")
+          .select("id", { count: "exact", head: true })
+          .eq("category_id", c.id)
+          .eq("status", "accepted");
+        if (typeof count === 'number') mapCounts[c.id] = count;
+      }
+      setAcceptedCounts(mapCounts);
     }
 
     setLoading(false);
@@ -143,6 +159,9 @@ export default function TournamentDetails() {
         ) : (
           <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-4">
             <Text className="text-base font-semibold text-gray-900">{tour.title || `Tournament #${tid}`}</Text>
+            {tour.organizer_display_name ? (
+              <Text className="text-sm text-gray-700 mt-1">Host: {tour.organizer_display_name}</Text>
+            ) : null}
             {tour.venue_name ? (
               <Text className="text-sm text-gray-700 mt-1">{tour.venue_name}</Text>
             ) : null}
@@ -174,6 +193,9 @@ export default function TournamentDetails() {
                     <View>
                       <Text className="text-sm text-gray-800">{c.name || `Category #${c.id}`}</Text>
                       <Text className="text-xs text-gray-600">USD {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
+                      <Text className="text-xs text-gray-600 mt-0.5">
+                        {acceptedCounts[c.id] !== undefined ? `Accepted: ${acceptedCounts[c.id]}${c.max_teams ? ` / ${c.max_teams}` : ''}` : 'Accepted: —'}
+                      </Text>
                     </View>
                     {meta ? (
                       meta.payment_status === "unpaid" ? (
