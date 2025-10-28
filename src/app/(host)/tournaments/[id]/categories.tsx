@@ -22,6 +22,7 @@ type Tournament = {
   start_date?: string | null;
   registration_start_date?: string | null;
   registration_end_date?: string | null;
+  organizer_id?: string | null;
 };
 
 export default function ManageCategories() {
@@ -129,11 +130,16 @@ export default function ManageCategories() {
     setLoading(true);
     const { data: t } = await supabase
       .from("tournaments")
-      .select("id,title,status,start_date,registration_start_date,registration_end_date")
+      .select("id,title,status,start_date,registration_start_date,registration_end_date,organizer_id")
       .eq("id", tid)
       .maybeSingle();
     const tt = (t as any) || null;
     setTournament(tt);
+    if (tt?.organizer_id && session?.user?.id && tt.organizer_id !== session.user.id) {
+      router.replace({ pathname: "/tournaments/[id]", params: { id: String(tid) } } as any);
+      setLoading(false);
+      return;
+    }
     if (tt?.registration_start_date) {
       const ds = new Date(tt.registration_start_date);
       setRegStart(toDMY(ds));

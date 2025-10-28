@@ -252,11 +252,25 @@ export default function NewTournament() {
         setErrRegEnd("Must be before tournament start");
         return;
       }
+      const uid = session.user.id;
+      let organizerDisplay = String(uid).slice(0, 8);
+      try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", uid)
+          .maybeSingle();
+        const full = (prof as any)?.full_name as string | null | undefined;
+        const uname = (prof as any)?.username as string | null | undefined;
+        organizerDisplay = (full && String(full).trim()) || (uname && String(uname).trim()) || organizerDisplay;
+      } catch {}
+
       setSubmitting(true);
       const { error } = await supabase
         .from("tournaments")
         .insert({
           organizer_id: session.user.id,
+          organizer_display_name: organizerDisplay,
           title,
           venue_name: venueName || null,
           start_date: startDT.toISOString(),

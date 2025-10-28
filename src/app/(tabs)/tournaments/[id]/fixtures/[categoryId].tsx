@@ -185,7 +185,7 @@ export default function FixturesByCategory() {
           title: `Fixtures`,
           headerBackVisible: false,
           headerLeft: () => (
-            <TouchableOpacity className="px-3 py-2" onPress={() => router.replace({ pathname: "/tournaments/[id]/categories", params: { id: String(tid) } } as any)}>
+            <TouchableOpacity className="px-3 py-2" onPress={() => router.replace({ pathname: "/tournaments/[id]", params: { id: String(tid) } } as any)}>
               <Text className="text-blue-600">Back</Text>
             </TouchableOpacity>
           ),
