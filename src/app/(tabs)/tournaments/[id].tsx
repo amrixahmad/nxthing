@@ -138,23 +138,33 @@ export default function TournamentDetails() {
         }
         mapStats[c.id] = { completed, total, currentRoundNumber, currentRoundName };
 
-        // Participants (team names or member names joined)
-        const { data: mems } = await supabase
-          .from("entry_members")
-          .select("entry_id, display_name, entry:entry_id(category_id)")
-          .eq("entry.category_id", c.id);
-        const byEntry: Record<number, string[]> = {};
-        ((mems as any[]) || []).forEach((em: any) => {
-          const eid = Number(em.entry_id);
-          const dn = String(em.display_name || '').trim();
-          if (!byEntry[eid]) byEntry[eid] = [];
-          if (dn) byEntry[eid].push(dn);
-        });
-        const names = Object.keys(byEntry)
-          .map((k) => byEntry[Number(k)].join(" / "))
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b));
-        mapParticipants[c.id] = names;
+        // Participants (only from accepted entries in this category)
+        const { data: eRows } = await supabase
+          .from("entries")
+          .select("id")
+          .eq("category_id", c.id)
+          .eq("status", "accepted");
+        const eids: number[] = ((eRows as any[]) || []).map((r: any) => Number(r.id)).filter(Boolean);
+        if (eids.length === 0) {
+          mapParticipants[c.id] = [];
+        } else {
+          const { data: mems } = await supabase
+            .from("entry_members")
+            .select("entry_id, display_name")
+            .in("entry_id", eids);
+          const byEntry: Record<number, string[]> = {};
+          ((mems as any[]) || []).forEach((em: any) => {
+            const eid = Number(em.entry_id);
+            const dn = String(em.display_name || '').trim();
+            if (!byEntry[eid]) byEntry[eid] = [];
+            if (dn) byEntry[eid].push(dn);
+          });
+          const names = Object.keys(byEntry)
+            .map((k) => byEntry[Number(k)].join(" / "))
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+          mapParticipants[c.id] = names;
+        }
       }
       setAcceptedCounts(mapCounts);
       setStatsByCategory(mapStats);
@@ -269,7 +279,7 @@ export default function TournamentDetails() {
                           {`Matches: ${stats.completed}/${stats.total}${stats.currentRoundName ? ` • Current: ${stats.currentRoundName}` : ''}`}
                         </Text>
                       ) : null}
-                      {participants.length > 0 ? (
+                      {(acceptedCounts[c.id] ?? 0) > 0 && participants.length > 0 ? (
                         <View className="mt-2">
                           <Text className="text-xs text-gray-700 mb-1">Participants</Text>
                           <View className="flex-row flex-wrap -m-1">
