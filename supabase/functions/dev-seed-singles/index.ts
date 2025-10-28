@@ -17,6 +17,7 @@ type Body = {
   members_per_team?: number;
   category_name?: string;
   max_teams?: number; // optional capacity override
+  reg_window?: "open" | "closed"; // control registration badge via dates
 };
 
 function makeSeedTag() {
@@ -142,12 +143,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    // Create tournament (registration closed yesterday to allow bracket gen)
+    // Create tournament with configurable registration window
     const now = new Date();
     const start = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
     const end = new Date(now.getTime() + 8 * 24 * 3600 * 1000);
-    const regStart = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
-    const regEnd = new Date(now.getTime() - 1 * 24 * 3600 * 1000);
+    const win = (String((body as any)?.reg_window || "closed").toLowerCase() as "open" | "closed");
+    const regStart = win === "open" ? new Date(now.getTime() - 1 * 24 * 3600 * 1000) : new Date(now.getTime() - 14 * 24 * 3600 * 1000);
+    const regEnd = win === "open" ? new Date(now.getTime() + 7 * 24 * 3600 * 1000) : new Date(now.getTime() - 1 * 24 * 3600 * 1000);
 
     // Organizer display name
     let organizerDisplay = (organizer_uuid || '').slice(0, 8);

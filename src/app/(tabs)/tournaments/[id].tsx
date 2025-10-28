@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
@@ -29,6 +29,9 @@ export default function TournamentDetails() {
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<Record<number, { id: number; payment_status: string }>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
+  const [statsByCategory, setStatsByCategory] = useState<Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }>>({});
+  const [participantsByCategory, setParticipantsByCategory] = useState<Record<number, string[]>>({});
+  const [showAllParticipants, setShowAllParticipants] = useState<Record<number, boolean>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<"error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
@@ -86,15 +89,76 @@ export default function TournamentDetails() {
 
     if (details) {
       const mapCounts: Record<number, number> = {};
+      const mapStats: Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }> = {};
+      const mapParticipants: Record<number, string[]> = {};
+
       for (const c of details.categories) {
+        // Accepted counts
         const { count } = await supabase
           .from("entries")
           .select("id", { count: "exact", head: true })
           .eq("category_id", c.id)
           .eq("status", "accepted");
         if (typeof count === 'number') mapCounts[c.id] = count;
+
+        // Stats: matches + rounds
+        const [{ data: ms }, { data: rds }] = await Promise.all([
+          supabase.from("matches").select("id, round_number, status").eq("category_id", c.id),
+          supabase.from("rounds").select("round_number, name").eq("category_id", c.id),
+        ]);
+        const matches = (ms as any[]) || [];
+        const rounds = (rds as any[]) || [];
+        const total = matches.length;
+        const completed = matches.filter((m: any) => String(m.status) === "completed").length;
+        let currentRoundNumber: number | null = null;
+        let currentRoundName: string | null = null;
+        const byRound: Record<number, { total: number; completed: number }> = {};
+        for (const m of matches) {
+          const rn = Number(m.round_number || 0);
+          if (!byRound[rn]) byRound[rn] = { total: 0, completed: 0 };
+          byRound[rn].total += 1;
+          if (String(m.status) === "completed") byRound[rn].completed += 1;
+        }
+        const sortedRounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+        for (const rn of sortedRounds) {
+          const rec = byRound[rn];
+          if (rec.completed < rec.total) {
+            currentRoundNumber = rn;
+            const rr = rounds.find((r: any) => Number(r.round_number) === rn);
+            currentRoundName = (rr?.name as string) || `Round ${rn}`;
+            break;
+          }
+        }
+        if (!currentRoundNumber && sortedRounds.length > 0) {
+          // All rounds complete
+          const last = sortedRounds[sortedRounds.length - 1];
+          currentRoundNumber = last;
+          const rr = rounds.find((r: any) => Number(r.round_number) === last);
+          currentRoundName = (rr?.name as string) || `Round ${last}`;
+        }
+        mapStats[c.id] = { completed, total, currentRoundNumber, currentRoundName };
+
+        // Participants (team names or member names joined)
+        const { data: mems } = await supabase
+          .from("entry_members")
+          .select("entry_id, display_name, entry:entry_id(category_id)")
+          .eq("entry.category_id", c.id);
+        const byEntry: Record<number, string[]> = {};
+        ((mems as any[]) || []).forEach((em: any) => {
+          const eid = Number(em.entry_id);
+          const dn = String(em.display_name || '').trim();
+          if (!byEntry[eid]) byEntry[eid] = [];
+          if (dn) byEntry[eid].push(dn);
+        });
+        const names = Object.keys(byEntry)
+          .map((k) => byEntry[Number(k)].join(" / "))
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        mapParticipants[c.id] = names;
       }
       setAcceptedCounts(mapCounts);
+      setStatsByCategory(mapStats);
+      setParticipantsByCategory(mapParticipants);
     }
 
     setLoading(false);
@@ -188,14 +252,40 @@ export default function TournamentDetails() {
               tour.categories.map((c) => {
                 const meta = entryByCategory[c.id];
                 const isBusy = busyKey === `c-${c.id}` || (meta && busyKey === `e-${meta.id}`);
+                const stats = statsByCategory[c.id];
+                const participants = participantsByCategory[c.id] || [];
+                const showingAll = !!showAllParticipants[c.id];
+                const preview = showingAll ? participants : participants.slice(0, 4);
                 return (
                   <View key={c.id} className="flex-row items-center justify-between mt-3">
-                    <View>
+                    <View className="flex-1 pr-3">
                       <Text className="text-sm text-gray-800">{c.name || `Category #${c.id}`}</Text>
                       <Text className="text-xs text-gray-600">USD {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
                       <Text className="text-xs text-gray-600 mt-0.5">
                         {acceptedCounts[c.id] !== undefined ? `Accepted: ${acceptedCounts[c.id]}${c.max_teams ? ` / ${c.max_teams}` : ''}` : 'Accepted: —'}
                       </Text>
+                      {stats ? (
+                        <Text className="text-xs text-gray-600 mt-0.5">
+                          {`Matches: ${stats.completed}/${stats.total}${stats.currentRoundName ? ` • Current: ${stats.currentRoundName}` : ''}`}
+                        </Text>
+                      ) : null}
+                      {participants.length > 0 ? (
+                        <View className="mt-2">
+                          <Text className="text-xs text-gray-700 mb-1">Participants</Text>
+                          <View className="flex-row flex-wrap -m-1">
+                            {preview.map((name, idx) => (
+                              <View key={idx} className="m-1 px-2 py-1 rounded bg-gray-100">
+                                <Text className="text-xs text-gray-800">{name}</Text>
+                              </View>
+                            ))}
+                          </View>
+                          {participants.length > 4 ? (
+                            <TouchableOpacity className="mt-2 self-start" onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}>
+                              <Text className="text-xs text-blue-600">{showingAll ? 'Hide players' : 'See all players'}</Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </View>
                     {meta ? (
                       meta.payment_status === "unpaid" ? (
@@ -212,13 +302,21 @@ export default function TournamentDetails() {
                         </View>
                       )
                     ) : (
-                      <TouchableOpacity
-                        className={`rounded-lg py-2 px-4 ${isBusy || !isOpen ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-                        onPress={() => register(c.id)}
-                        disabled={isBusy || !isOpen}
-                      >
-                        <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>{isOpen ? "Register" : "Closed"}</Text>
-                      </TouchableOpacity>
+                      isOpen ? (
+                        <TouchableOpacity
+                          className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                          onPress={() => register(c.id)}
+                          disabled={isBusy}
+                        >
+                          <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>Register</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Link href={{ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(c.id) } }} asChild>
+                          <TouchableOpacity className="rounded-lg py-2 px-4 border border-gray-300">
+                            <Text className="text-center text-gray-800">View Fixtures</Text>
+                          </TouchableOpacity>
+                        </Link>
+                      )
                     )}
                   </View>
                 );
