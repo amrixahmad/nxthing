@@ -19,7 +19,7 @@ import {
   Platform,
 } from "react-native";
 import { supabase } from "../../../lib/supabase";
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 
 /**
  * Authentication component with sign in and sign up functionality
@@ -47,6 +47,7 @@ export default function Auth() {
 
   /** Toggle between sign in and sign up modes */
   const [isSignUp, setIsSignUp] = useState(false);
+  const [notice, setNotice] = useState<null | { type: "success" | "error"; text: string }>(null);
 
   /**
    * Handles user sign in with email and password
@@ -58,18 +59,28 @@ export default function Auth() {
    */
   async function signInWithEmail() {
     if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+      setNotice({ type: "error", text: "Please fill in all fields" });
       return;
     }
 
     setLoading(true);
+    setNotice(null);
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim(),
       password,
     });
 
     if (error) {
-      Alert.alert("Sign In Error", error.message);
+      const emsg = String(error.message || "").toLowerCase();
+      const msg = emsg.includes("invalid login") || emsg.includes("invalid email")
+        ? "Incorrect email or password."
+        : error.message;
+      setNotice({ type: "error", text: msg });
+    } else {
+      setNotice({ type: "success", text: "Signed in successfully. Redirecting..." });
+      setTimeout(() => {
+        try { router.replace("/"); } catch {}
+      }, 600);
     }
     setLoading(false);
   }
@@ -146,6 +157,9 @@ export default function Auth() {
             <Text className="text-xl font-semibold text-gray-900 mb-6 text-center">
               {isSignUp ? "Create Account" : "Sign In"}
             </Text>
+            {!isSignUp && notice ? (
+              <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
+            ) : null}
 
             {/* Email Input */}
             <View className="mb-4">
