@@ -18,6 +18,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import * as Linking from "expo-linking";
 import { supabase } from "../../../lib/supabase";
 import { Stack, router } from "expo-router";
 
@@ -105,7 +106,15 @@ export default function Auth() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    // For native apps, send a magic-link redirect that opens back into the app via our scheme
+    let opts: any = {};
+    try {
+      if (Platform.OS !== "web") {
+        const redirect = "myapp://auth-callback";
+        opts = { options: { emailRedirectTo: redirect } };
+      }
+    } catch {}
+    const { error } = await supabase.auth.signUp({ email, password, ...(opts || {}) });
 
     if (error) {
       Alert.alert("Sign Up Error", error.message);
