@@ -103,10 +103,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    // Authorization: player who created OR organizer
+    // Authorization: player who created, a member of the entry, or organizer
     const isCreator = entry.created_by === user.id;
     const isOrganizer = tournament.organizer_id === user.id;
+    let isMember = false;
     if (!isCreator && !isOrganizer) {
+      const { data: mem } = await supabase
+        .from("entry_members")
+        .select("profile_id")
+        .eq("entry_id", body.entry_id)
+        .eq("profile_id", user.id)
+        .maybeSingle();
+      isMember = !!mem;
+    }
+    if (!isCreator && !isOrganizer && !isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -200,6 +210,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         category_id: String(category.id),
         tournament_id: String(tournament.id),
         user_id: user.id,
+        profile_id: user.id,
       },
       allow_promotion_codes: false,
     });

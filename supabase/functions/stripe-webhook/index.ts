@@ -63,6 +63,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       const entryId = Number(session.metadata?.entry_id || 0);
+      const profileId = String(session.metadata?.profile_id || "");
       if (!entryId) {
         console.warn("No entry_id in session metadata", session.id);
       } else {
@@ -74,7 +75,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
         const { data: entry } = await supabase
           .from("entries")
-          .select("id, payment_amount, payment_currency, payment_status")
+          .select("id, category_id, payment_amount, payment_currency, payment_status")
           .eq("id", entryId)
           .maybeSingle();
 
@@ -106,18 +107,66 @@ Deno.serve(async (req: Request): Promise<Response> => {
               .update({ payment_reference: session.id })
               .eq("id", entryId);
           } else {
-            // Idempotent paid update
-            await supabase
-              .from("entries")
-              .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
-              .eq("id", entryId)
-              .in("payment_status", ["unpaid", "waived"]);
-            // Optional: auto-accept entry when paid
-            await supabase
-              .from("entries")
-              .update({ status: "accepted" })
-              .eq("id", entryId)
-              .eq("status", "pending");
+            // Member-level paid update (idempotent)
+            if (profileId) {
+              await supabase
+                .from("entry_members")
+                .update({
+                  payment_status: "paid",
+                  payment_reference: session.id,
+                  payment_amount: expectedCents / 100.0,
+                  payment_currency: expectedCurrency,
+                  paid_at: new Date().toISOString(),
+                })
+                .eq("entry_id", entryId)
+                .eq("profile_id", profileId)
+                .in("payment_status", ["unpaid", "waived"]);
+
+              // Check if team is fully paid -> accept entry and mark entry as paid
+              const { data: cat } = await supabase
+                .from("tournament_categories")
+                .select("members_per_team_max")
+                .eq("id", entry.category_id)
+                .maybeSingle();
+              const maxMembers = Number(cat?.members_per_team_max || 1);
+
+              const { count: paidCount } = await supabase
+                .from("entry_members")
+                .select("profile_id", { count: "exact", head: true })
+                .eq("entry_id", entryId)
+                .eq("payment_status", "paid");
+
+              if (maxMembers && typeof paidCount === "number" && paidCount >= maxMembers) {
+                await supabase
+                  .from("entries")
+                  .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
+                  .eq("id", entryId)
+                  .in("payment_status", ["unpaid", "waived"]);
+                await supabase
+                  .from("entries")
+                  .update({ status: "accepted" })
+                  .eq("id", entryId)
+                  .eq("status", "pending");
+              } else {
+                // Always store the latest reference
+                await supabase
+                  .from("entries")
+                  .update({ payment_reference: session.id })
+                  .eq("id", entryId);
+              }
+            } else {
+              // Fallback to entry-level update if no profile_id (legacy behavior)
+              await supabase
+                .from("entries")
+                .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
+                .eq("id", entryId)
+                .in("payment_status", ["unpaid", "waived"]);
+              await supabase
+                .from("entries")
+                .update({ status: "accepted" })
+                .eq("id", entryId)
+                .eq("status", "pending");
+            }
           }
         }
       }
