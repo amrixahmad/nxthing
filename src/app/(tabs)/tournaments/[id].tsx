@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
-import { formatDateTimeLocal } from "@/src/utils/datetime";
+import { formatDateTimeLocal } from "@/utils/datetime";
 
 type Cat = { id: number; name?: string | null; registration_fee?: number | null; max_teams?: number | null };
 
@@ -260,8 +260,9 @@ export default function TournamentDetails() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <>
       <Stack.Screen options={{ title: tour?.title || `Tournament #${tid}` }} />
+      <ScrollView className="flex-1 bg-gray-50">
 
       <View className="px-4 mt-6">
         {notice && (
@@ -426,6 +427,7 @@ export default function TournamentDetails() {
           )}
         </View>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
