@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { startCheckout } from "@/utils/checkout";
-import { formatDateTimeLocal } from "@/utils/datetime";
+import { formatDateTimeLocal } from "@/src/utils/datetime";
 
 type EntryRow = {
   id: number;

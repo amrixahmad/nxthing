@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
-import { formatDateTimeLocal } from "@/utils/datetime";
+import { formatDateTimeLocal } from "@/src/utils/datetime";
 
 type Cat = { id: number; name?: string | null; registration_fee?: number | null; max_teams?: number | null };
 

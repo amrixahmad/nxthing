@@ -5,7 +5,7 @@ import { useToast } from "@/src/components/Toast";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { toDMY, toHM12, combineDateTime, parseDMY, parseTime12 } from "@/utils/datetime";
+import { toDMY, toHM12, combineDateTime, parseDMY, parseTime12 } from "@/src/utils/datetime";
 
 export default function EditTournament() {
   const { session } = useSession();

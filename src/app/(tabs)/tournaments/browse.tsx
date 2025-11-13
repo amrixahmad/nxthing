@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Stack, Link } from "expo-router";
-import { formatDateTimeLocal } from "@/utils/datetime";
+import { formatDateTimeLocal } from "@/src/utils/datetime";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { useFocusEffect } from "@react-navigation/native";

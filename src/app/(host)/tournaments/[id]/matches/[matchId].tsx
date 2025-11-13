@@ -4,7 +4,7 @@ import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useToast } from "@/src/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/context/SessionProvider";
-import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/utils/datetime";
+import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/src/utils/datetime";
 
  type Match = {
   id: number;
