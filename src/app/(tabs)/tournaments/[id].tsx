@@ -34,7 +34,9 @@ export default function TournamentDetails() {
 
   const [loading, setLoading] = useState(true);
   const [tour, setTour] = useState<Tour | null>(null);
-  const [entryByCategory, setEntryByCategory] = useState<Record<number, { id: number; payment_status: string }>>({});
+  const [entryByCategory, setEntryByCategory] = useState<
+    Record<number, { id: number; payment_status: string; invite_code?: string | null }>
+  >({});
   const [teamSizeByEntry, setTeamSizeByEntry] = useState<Record<number, number>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
   const [statsByCategory, setStatsByCategory] = useState<Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }>>({});
@@ -89,17 +91,21 @@ export default function TournamentDetails() {
     if (session?.user) {
       const { data: entries } = await supabase
         .from("entries")
-        .select("id, payment_status, category_id, category:category_id(tournament_id)")
+        .select("id, payment_status, invite_code, category_id, category:category_id(tournament_id)")
         .eq("created_by", session.user.id);
 
-      const map: Record<number, { id: number; payment_status: string }> = {};
+      const map: Record<number, { id: number; payment_status: string; invite_code?: string | null }> = {};
       const sizeMap: Record<number, number> = {};
       const rows: any[] = (entries as any[]) || [];
 
       for (const r of rows) {
         const cat = Array.isArray(r.category) ? r.category[0] : r.category;
         if (cat?.tournament_id === tid) {
-          map[r.category_id] = { id: r.id, payment_status: r.payment_status };
+          map[r.category_id] = {
+            id: r.id,
+            payment_status: r.payment_status,
+            invite_code: r.invite_code ?? null,
+          };
 
           const { count } = await supabase
             .from("entry_members")
@@ -266,7 +272,10 @@ export default function TournamentDetails() {
       const code = String((data as any)?.invite_code || "");
       const inviteUrl = String((data as any)?.invite_url || "");
       if (eid) {
-        setEntryByCategory((m) => ({ ...m, [categoryId]: { id: eid, payment_status: "unpaid" } }));
+        setEntryByCategory((m) => ({
+          ...m,
+          [categoryId]: { id: eid, payment_status: "unpaid", invite_code: code || null },
+        }));
         setCreatedCategoryId(categoryId);
         setCreatedEntryId(eid);
         setCreatedInviteCode(code || null);
@@ -337,10 +346,20 @@ export default function TournamentDetails() {
                 let actionNode = null;
                 if (meta) {
                   if (meta.payment_status === "unpaid") {
-                    const inviteUrlToShow =
-                      createdCategoryId === c.id
-                        ? createdInviteUrl || (createdInviteCode ? `/tournaments/register?invite=${createdInviteCode}` : "")
-                        : "";
+                    let inviteUrlToShow = "";
+                    const inviteCode = (meta as any).invite_code as string | null | undefined;
+                    if (inviteCode) {
+                      if (Platform.OS === "web" && typeof window !== "undefined") {
+                        inviteUrlToShow = `${window.location.origin}/tournaments/register?invite=${inviteCode}`;
+                      } else {
+                        inviteUrlToShow = `/tournaments/register?invite=${inviteCode}`;
+                      }
+                    }
+
+                    if (createdCategoryId === c.id && createdInviteUrl && createdInviteCode) {
+                      inviteUrlToShow = createdInviteUrl;
+                    }
+
                     actionNode = (
                       <View>
                         <TouchableOpacity
@@ -352,7 +371,7 @@ export default function TournamentDetails() {
                             {isOpen ? "Pay" : "Closed"}
                           </Text>
                         </TouchableOpacity>
-                        {createdCategoryId === c.id && inviteUrlToShow ? (
+                        {inviteUrlToShow ? (
                           <View className="mt-2 p-2 rounded bg-blue-50 border border-blue-200">
                             <Text className="text-xs text-blue-800 mb-1">Invite Link:</Text>
                             <Text className="text-xs text-blue-900" selectable>
