@@ -260,9 +260,9 @@ export default function TournamentDetails() {
   }
 
   return (
-    <>
+    <View className="flex-1 bg-gray-50">
       <Stack.Screen options={{ title: tour?.title || `Tournament #${tid}` }} />
-      <ScrollView className="flex-1 bg-gray-50">
+      <ScrollView className="flex-1">
 
       <View className="px-4 mt-6">
         {notice && (
@@ -426,8 +426,7 @@ export default function TournamentDetails() {
             })
           )}
         </View>
-      </View>
       </ScrollView>
-    </>
+    </View>
   );
 }
