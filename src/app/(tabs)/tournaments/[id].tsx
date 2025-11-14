@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Platform } from "react-native";
 import { Stack, useLocalSearchParams, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 import { registerThenCheckout, startCheckout } from "@/utils/checkout";
 import { formatDateTimeLocal } from "@/utils/datetime";
 
-type Cat = { id: number; name?: string | null; registration_fee?: number | null; max_teams?: number | null };
+type Cat = {
+  id: number;
+  name?: string | null;
+  registration_fee?: number | null;
+  max_teams?: number | null;
+  members_per_team_min?: number | null;
+  members_per_team_max?: number | null;
+};
 
 type Tour = {
   id: number;
@@ -28,6 +35,7 @@ export default function TournamentDetails() {
   const [loading, setLoading] = useState(true);
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<Record<number, { id: number; payment_status: string }>>({});
+  const [teamSizeByEntry, setTeamSizeByEntry] = useState<Record<number, number>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
   const [statsByCategory, setStatsByCategory] = useState<Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }>>({});
   const [participantsByCategory, setParticipantsByCategory] = useState<Record<number, string[]>>({});
@@ -40,6 +48,7 @@ export default function TournamentDetails() {
   const [createdCategoryId, setCreatedCategoryId] = useState<number | null>(null);
   const [createdEntryId, setCreatedEntryId] = useState<number | null>(null);
   const [createdInviteCode, setCreatedInviteCode] = useState<string | null>(null);
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const isOpen = (() => {
     if (!tour) return false;
     if (tour.status !== "registration_open") return false;
@@ -56,7 +65,7 @@ export default function TournamentDetails() {
       .from("tournaments")
       .select(
         `id, title, venue_name, start_date, registration_start_date, registration_end_date, status, organizer_display_name,
-         categories:tournament_categories ( id, name, registration_fee, max_teams )`
+         categories:tournament_categories ( id, name, registration_fee, max_teams, members_per_team_min, members_per_team_max )`
       )
       .eq("id", tid)
       .maybeSingle();
@@ -82,14 +91,26 @@ export default function TournamentDetails() {
         .from("entries")
         .select("id, payment_status, category_id, category:category_id(tournament_id)")
         .eq("created_by", session.user.id);
+
       const map: Record<number, { id: number; payment_status: string }> = {};
-      (entries as any[])?.forEach((r: any) => {
+      const sizeMap: Record<number, number> = {};
+      const rows: any[] = (entries as any[]) || [];
+
+      for (const r of rows) {
         const cat = Array.isArray(r.category) ? r.category[0] : r.category;
         if (cat?.tournament_id === tid) {
           map[r.category_id] = { id: r.id, payment_status: r.payment_status };
+
+          const { count } = await supabase
+            .from("entry_members")
+            .select("profile_id", { count: "exact", head: true })
+            .eq("entry_id", r.id);
+          if (typeof count === "number") sizeMap[r.id] = count;
         }
-      });
+      }
+
       setEntryByCategory(map);
+      setTeamSizeByEntry(sizeMap);
     }
 
     if (details) {
@@ -243,11 +264,13 @@ export default function TournamentDetails() {
       if (error) throw error;
       const eid = Number((data as any)?.entry_id || 0);
       const code = String((data as any)?.invite_code || "");
+      const inviteUrl = String((data as any)?.invite_url || "");
       if (eid) {
         setEntryByCategory((m) => ({ ...m, [categoryId]: { id: eid, payment_status: "unpaid" } }));
         setCreatedCategoryId(categoryId);
         setCreatedEntryId(eid);
         setCreatedInviteCode(code || null);
+        setCreatedInviteUrl(inviteUrl || null);
         setCreatingFor(null);
         setTeamName("");
       }
@@ -309,10 +332,15 @@ export default function TournamentDetails() {
                 const participants = participantsByCategory[c.id] || [];
                 const showingAll = !!showAllParticipants[c.id];
                 const preview = showingAll ? participants : participants.slice(0, 4);
+                const teamSize = meta ? teamSizeByEntry[meta.id] : undefined;
 
                 let actionNode = null;
                 if (meta) {
                   if (meta.payment_status === "unpaid") {
+                    const inviteUrlToShow =
+                      createdCategoryId === c.id
+                        ? createdInviteUrl || (createdInviteCode ? `/tournaments/register?invite=${createdInviteCode}` : "")
+                        : "";
                     actionNode = (
                       <View>
                         <TouchableOpacity
@@ -324,10 +352,34 @@ export default function TournamentDetails() {
                             {isOpen ? "Pay" : "Closed"}
                           </Text>
                         </TouchableOpacity>
-                        {createdCategoryId === c.id && createdInviteCode ? (
+                        {createdCategoryId === c.id && inviteUrlToShow ? (
                           <View className="mt-2 p-2 rounded bg-blue-50 border border-blue-200">
-                            <Text className="text-xs text-blue-800">Invite Link:</Text>
-                            <Text className="text-xs text-blue-900">{`/tournaments/register?invite=${createdInviteCode}`}</Text>
+                            <Text className="text-xs text-blue-800 mb-1">Invite Link:</Text>
+                            <Text className="text-xs text-blue-900" selectable>
+                              {inviteUrlToShow}
+                            </Text>
+                            {Platform.OS === "web" ? (
+                              <TouchableOpacity
+                                className="mt-2 self-start rounded px-3 py-1 bg-blue-600 active:bg-blue-700"
+                                onPress={async () => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                                    try {
+                                      await navigator.clipboard.writeText(inviteUrlToShow);
+                                    } catch {
+                                      // ignore copy errors
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text className="text-xs font-semibold text-white">Copy link</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {(typeof teamSize === "number" || c.members_per_team_max != null) && (
+                              <Text className="text-xs text-blue-800 mt-2">
+                                Team members: {typeof teamSize === "number" ? teamSize : "—"}
+                                {c.members_per_team_max ? ` / ${c.members_per_team_max}` : ""}
+                              </Text>
+                            )}
                           </View>
                         ) : null}
                       </View>
