@@ -309,13 +309,117 @@ export default function TournamentDetails() {
                 const participants = participantsByCategory[c.id] || [];
                 const showingAll = !!showAllParticipants[c.id];
                 const preview = showingAll ? participants : participants.slice(0, 4);
+
+                let actionNode = null;
+                if (meta) {
+                  if (meta.payment_status === "unpaid") {
+                    actionNode = (
+                      <View>
+                        <TouchableOpacity
+                          className={`rounded-lg py-2 px-4 ${isBusy || !isOpen ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                          onPress={() => payEntry(meta.id)}
+                          disabled={isBusy || !isOpen}
+                        >
+                          <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>
+                            {isOpen ? "Pay" : "Closed"}
+                          </Text>
+                        </TouchableOpacity>
+                        {createdCategoryId === c.id && createdInviteCode ? (
+                          <View className="mt-2 p-2 rounded bg-blue-50 border border-blue-200">
+                            <Text className="text-xs text-blue-800">Invite Link:</Text>
+                            <Text className="text-xs text-blue-900">{`/tournaments/register?invite=${createdInviteCode}`}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  } else {
+                    actionNode = (
+                      <View className="px-3 py-2 rounded-lg bg-green-100">
+                        <Text className="text-green-800">Registered</Text>
+                      </View>
+                    );
+                  }
+                } else if (isOpen) {
+                  actionNode = (
+                    <View>
+                      <View className="flex-row">
+                        <TouchableOpacity
+                          className={`mr-2 rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                          onPress={() => register(c.id)}
+                          disabled={isBusy}
+                        >
+                          <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>
+                            Register
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
+                          onPress={() => setCreatingFor(c.id)}
+                          disabled={isBusy}
+                        >
+                          <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>
+                            Create Team
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {creatingFor === c.id ? (
+                        <View className="mt-2">
+                          <TextInput
+                            className="border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamName}
+                            onChangeText={setTeamName}
+                            placeholder="Team name"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <View className="flex-row mt-2">
+                            <TouchableOpacity
+                              className={`mr-2 rounded-lg py-2 px-4 ${busyKey === ("ct-" + c.id) ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
+                              onPress={() => onCreateTeam(c.id)}
+                              disabled={busyKey === ("ct-" + c.id)}
+                            >
+                              <Text className={"text-center font-semibold " + (busyKey === ("ct-" + c.id) ? "text-gray-500" : "text-white")}>
+                                Create
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              className="rounded-lg py-2 px-4 border border-gray-300"
+                              onPress={() => {
+                                setCreatingFor(null);
+                                setTeamName("");
+                              }}
+                            >
+                              <Text className="text-center text-gray-800">Cancel</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                } else {
+                  actionNode = (
+                    <Link
+                      href={{
+                        pathname: "/tournaments/[id]/fixtures/[categoryId]",
+                        params: { id: String(tid), categoryId: String(c.id) },
+                      }}
+                      asChild
+                    >
+                      <TouchableOpacity className="rounded-lg py-2 px-4 border border-gray-300">
+                        <Text className="text-center text-gray-800">View Fixtures</Text>
+                      </TouchableOpacity>
+                    </Link>
+                  );
+                }
+
                 return (
                   <View key={c.id} className="flex-row items-center justify-between mt-3">
                     <View className="flex-1 pr-3">
                       <Text className="text-sm text-gray-800">{c.name || `Category #${c.id}`}</Text>
                       <Text className="text-xs text-gray-600">USD {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
                       <Text className="text-xs text-gray-600 mt-0.5">
-                        {acceptedCounts[c.id] !== undefined ? `Accepted: ${acceptedCounts[c.id]}${c.max_teams ? ` / ${c.max_teams}` : ''}` : 'Accepted: —'}
+                        {acceptedCounts[c.id] !== undefined
+                          ? `Accepted: ${acceptedCounts[c.id]}${c.max_teams ? ` / ${c.max_teams}` : ''}`
+                          : "Accepted: —"}
                       </Text>
                       {stats ? (
                         <Text className="text-xs text-gray-600 mt-0.5">
@@ -333,98 +437,23 @@ export default function TournamentDetails() {
                             ))}
                           </View>
                           {participants.length > 4 ? (
-                            <TouchableOpacity className="mt-2 self-start" onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}>
-                              <Text className="text-xs text-blue-600">{showingAll ? 'Hide players' : 'See all players'}</Text>
+                            <TouchableOpacity
+                              className="mt-2 self-start"
+                              onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}
+                            >
+                              <Text className="text-xs text-blue-600">{showingAll ? "Hide players" : "See all players"}</Text>
                             </TouchableOpacity>
                           ) : null}
                         </View>
                       ) : null}
                     </View>
-                    {meta ? (
-                      meta.payment_status === "unpaid" ? (
-                        <View>
-                          <TouchableOpacity
-                            className={`rounded-lg py-2 px-4 ${isBusy || !isOpen ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-                            onPress={() => payEntry(meta.id)}
-                            disabled={isBusy || !isOpen}
-                          >
-                            <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>{isOpen ? "Pay" : "Closed"}</Text>
-                          </TouchableOpacity>
-                          {createdCategoryId === c.id && createdInviteCode ? (
-                            <View className="mt-2 p-2 rounded bg-blue-50 border border-blue-200">
-                              <Text className="text-xs text-blue-800">Invite Link:</Text>
-                              <Text className="text-xs text-blue-900">{`/tournaments/register?invite=${createdInviteCode}`}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      ) : (
-                        <View className="px-3 py-2 rounded-lg bg-green-100">
-                          <Text className="text-green-800">Registered</Text>
-                        </View>
-                      )
-                    ) : (
-                      isOpen ? (
-                        <View>
-                          <View className="flex-row">
-                            <TouchableOpacity
-                              className={`mr-2 rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-                              onPress={() => register(c.id)}
-                              disabled={isBusy}
-                            >
-                              <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>Register</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
-                              onPress={() => setCreatingFor(c.id)}
-                              disabled={isBusy}
-                            >
-                              <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>Create Team</Text>
-                            </TouchableOpacity>
-                          </View>
-                          {creatingFor === c.id ? (
-                            <View className="mt-2">
-                              <TextInput
-                                className="border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
-                                value={teamName}
-                                onChangeText={setTeamName}
-                                placeholder="Team name"
-                                placeholderTextColor="#9CA3AF"
-                              />
-                              <View className="flex-row mt-2">
-                                <TouchableOpacity
-                                  className={`mr-2 rounded-lg py-2 px-4 ${busyKey === ("ct-" + c.id) ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
-                                  onPress={() => onCreateTeam(c.id)}
-                                  disabled={busyKey === ("ct-" + c.id)}
-                                >
-                                  <Text className={"text-center font-semibold " + (busyKey === ("ct-" + c.id) ? "text-gray-500" : "text-white")}>Create</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  className="rounded-lg py-2 px-4 border border-gray-300"
-                                  onPress={() => {
-                                    setCreatingFor(null);
-                                    setTeamName("");
-                                  }}
-                                >
-                                  <Text className="text-center text-gray-800">Cancel</Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          ) : null}
-                        </View>
-                      ) : (
-                        <Link href={{ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(c.id) } }} asChild>
-                          <TouchableOpacity className="rounded-lg py-2 px-4 border border-gray-300">
-                            <Text className="text-center text-gray-800">View Fixtures</Text>
-                          </TouchableOpacity>
-                        </Link>
-                      )
-                    )
-                  }
-                </View>
-              );
-            })
-          )}
-        </View>
+                    {actionNode}
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
