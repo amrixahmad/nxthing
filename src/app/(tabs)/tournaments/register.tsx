@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSession } from "@/context/SessionProvider";
@@ -16,6 +16,8 @@ export default function RegisterAndPay() {
   const [joining, setJoining] = useState(false);
   const [joinedEntryId, setJoinedEntryId] = useState<number | null>(null);
   const [teamName, setTeamName] = useState<string | null>(null);
+  const [teamSlogan, setTeamSlogan] = useState<string | null>(null);
+  const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null);
 
   async function ensureEntry(userId: string, catId: number) {
     const { data: existing, error: selErr } = await supabase
@@ -58,13 +60,17 @@ export default function RegisterAndPay() {
         const entryId = Number((data as any)?.entry_id || 0);
         if (entryId) {
           setJoinedEntryId(entryId);
-          // Load team name for display
+          // Load team profile for display
           const { data: e } = await supabase
             .from("entries")
-            .select("team_name, invite_code")
+            .select("team_name, team_slogan, team_logo_url, invite_code")
             .eq("id", entryId)
             .maybeSingle();
-          if (e?.team_name) setTeamName(String(e.team_name));
+          if (e) {
+            if (e.team_name != null) setTeamName(String(e.team_name));
+            if (e.team_slogan != null) setTeamSlogan(String(e.team_slogan));
+            if (e.team_logo_url != null) setTeamLogoUrl(String(e.team_logo_url));
+          }
         }
       } catch (err: any) {
         Alert.alert("Invite Error", err?.message || "Could not join team");
@@ -212,6 +218,32 @@ export default function RegisterAndPay() {
               <Text className="text-sm text-gray-700 mb-4">
                 {joining ? "Validating invite..." : teamName ? `You are registering to join ${teamName}.` : "Invite recognized. You can proceed to payment."}
               </Text>
+              {(teamName || teamSlogan || teamLogoUrl) && (
+                <View className="mb-4 p-3 rounded-lg bg-indigo-50 border border-indigo-200 flex-row items-center">
+                  {teamLogoUrl ? (
+                    <Image
+                      source={{ uri: teamLogoUrl }}
+                      className="w-10 h-10 rounded-full mr-3"
+                    />
+                  ) : (
+                    <View className="w-10 h-10 rounded-full bg-indigo-100 mr-3 items-center justify-center">
+                      <Text className="text-xs font-semibold text-indigo-700">
+                        {((teamName || "Team").toString().trim().slice(0, 2) || "TM").toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-indigo-900">
+                      {teamName || "Invited team"}
+                    </Text>
+                    {teamSlogan ? (
+                      <Text className="text-xs text-indigo-800 mt-0.5">
+                        {teamSlogan}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              )}
               <TouchableOpacity
                 className={`rounded-lg py-4 px-6 ${submitting || joining ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                 onPress={onJoinAndPay}

@@ -11,6 +11,8 @@ const corsHeaders = {
 type CreateTeamRequest = {
   category_id: number;
   team_name: string;
+  team_slogan?: string | null;
+  team_logo_url?: string | null;
 };
 
 type CreateTeamResponse = {
@@ -115,6 +117,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
           category_id: body.category_id,
           created_by: user.id,
           team_name: body.team_name,
+          team_slogan: body.team_slogan ?? null,
+          team_logo_url: body.team_logo_url ?? null,
           payment_currency: "usd",
           status: "pending",
           invite_code: invite,

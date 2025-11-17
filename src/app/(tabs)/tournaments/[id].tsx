@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Platform } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Image, Platform } from "react-native";
 import { Stack, useLocalSearchParams, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -35,7 +35,17 @@ export default function TournamentDetails() {
   const [loading, setLoading] = useState(true);
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<
-    Record<number, { id: number; payment_status: string; invite_code?: string | null }>
+    Record<
+      number,
+      {
+        id: number;
+        payment_status: string;
+        invite_code?: string | null;
+        team_name?: string | null;
+        team_slogan?: string | null;
+        team_logo_url?: string | null;
+      }
+    >
   >({});
   const [teamSizeByEntry, setTeamSizeByEntry] = useState<Record<number, number>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
@@ -46,7 +56,10 @@ export default function TournamentDetails() {
   const [notice, setNotice] = useState<"error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
   const [creatingFor, setCreatingFor] = useState<number | null>(null);
+  const [editingFor, setEditingFor] = useState<number | null>(null);
   const [teamName, setTeamName] = useState("");
+  const [teamSlogan, setTeamSlogan] = useState("");
+  const [teamLogoUrl, setTeamLogoUrl] = useState("");
   const [createdCategoryId, setCreatedCategoryId] = useState<number | null>(null);
   const [createdEntryId, setCreatedEntryId] = useState<number | null>(null);
   const [createdInviteCode, setCreatedInviteCode] = useState<string | null>(null);
@@ -91,10 +104,22 @@ export default function TournamentDetails() {
     if (session?.user) {
       const { data: entries } = await supabase
         .from("entries")
-        .select("id, payment_status, invite_code, category_id, category:category_id(tournament_id)")
+        .select(
+          "id, payment_status, invite_code, team_name, team_slogan, team_logo_url, category_id, category:category_id(tournament_id)"
+        )
         .eq("created_by", session.user.id);
 
-      const map: Record<number, { id: number; payment_status: string; invite_code?: string | null }> = {};
+      const map: Record<
+        number,
+        {
+          id: number;
+          payment_status: string;
+          invite_code?: string | null;
+          team_name?: string | null;
+          team_slogan?: string | null;
+          team_logo_url?: string | null;
+        }
+      > = {};
       const sizeMap: Record<number, number> = {};
       const rows: any[] = (entries as any[]) || [];
 
@@ -105,6 +130,9 @@ export default function TournamentDetails() {
             id: r.id,
             payment_status: r.payment_status,
             invite_code: r.invite_code ?? null,
+            team_name: r.team_name ?? null,
+            team_slogan: r.team_slogan ?? null,
+            team_logo_url: r.team_logo_url ?? null,
           };
 
           const { count } = await supabase
@@ -259,13 +287,20 @@ export default function TournamentDetails() {
         return;
       }
       const name = teamName.trim();
+      const slogan = teamSlogan.trim();
+      const logo = teamLogoUrl.trim();
       if (!name) {
         setNotice("error");
         setNoticeText("Team name is required.");
         return;
       }
       const { data, error } = await supabase.functions.invoke("team-create", {
-        body: { category_id: categoryId, team_name: name },
+        body: {
+          category_id: categoryId,
+          team_name: name,
+          team_slogan: slogan || null,
+          team_logo_url: logo || null,
+        },
       });
       if (error) throw error;
       const eid = Number((data as any)?.entry_id || 0);
@@ -274,7 +309,14 @@ export default function TournamentDetails() {
       if (eid) {
         setEntryByCategory((m) => ({
           ...m,
-          [categoryId]: { id: eid, payment_status: "unpaid", invite_code: code || null },
+          [categoryId]: {
+            id: eid,
+            payment_status: "unpaid",
+            invite_code: code || null,
+            team_name: name,
+            team_slogan: slogan || null,
+            team_logo_url: logo || null,
+          },
         }));
         setCreatedCategoryId(categoryId);
         setCreatedEntryId(eid);
@@ -282,10 +324,64 @@ export default function TournamentDetails() {
         setCreatedInviteUrl(inviteUrl || null);
         setCreatingFor(null);
         setTeamName("");
+        setTeamSlogan("");
+        setTeamLogoUrl("");
       }
     } catch (e: any) {
       setNotice("error");
       setNoticeText(e?.message || "Could not create team");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function onUpdateTeam(entryId: number, categoryId: number) {
+    if (!session?.user) return;
+    try {
+      setBusyKey(`ut-${entryId}`);
+      setNotice(null);
+      if (!isOpen) {
+        setNotice("error");
+        setNoticeText("Registration is closed for this tournament.");
+        return;
+      }
+      const name = teamName.trim();
+      const slogan = teamSlogan.trim();
+      const logo = teamLogoUrl.trim();
+      if (!name) {
+        setNotice("error");
+        setNoticeText("Team name is required.");
+        return;
+      }
+      const { error } = await supabase
+        .from("entries")
+        .update({
+          team_name: name,
+          team_slogan: slogan || null,
+          team_logo_url: logo || null,
+        })
+        .eq("id", entryId);
+      if (error) throw error;
+      setEntryByCategory((m) => {
+        const existing = m[categoryId];
+        if (!existing) return m;
+        return {
+          ...m,
+          [categoryId]: {
+            ...existing,
+            team_name: name,
+            team_slogan: slogan || null,
+            team_logo_url: logo || null,
+          },
+        };
+      });
+      setEditingFor(null);
+      setTeamName("");
+      setTeamSlogan("");
+      setTeamLogoUrl("");
+    } catch (e: any) {
+      setNotice("error");
+      setNoticeText(e?.message || "Could not update team");
     } finally {
       setBusyKey(null);
     }
@@ -425,7 +521,13 @@ export default function TournamentDetails() {
                         </TouchableOpacity>
                         <TouchableOpacity
                           className={`rounded-lg py-2 px-4 ${isBusy ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
-                          onPress={() => setCreatingFor(c.id)}
+                          onPress={() => {
+                            setCreatingFor(c.id);
+                            setEditingFor(null);
+                            setTeamName("");
+                            setTeamSlogan("");
+                            setTeamLogoUrl("");
+                          }}
                           disabled={isBusy}
                         >
                           <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>
@@ -440,6 +542,20 @@ export default function TournamentDetails() {
                             value={teamName}
                             onChangeText={setTeamName}
                             placeholder="Team name"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <TextInput
+                            className="mt-2 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamSlogan}
+                            onChangeText={setTeamSlogan}
+                            placeholder="Team slogan (optional)"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <TextInput
+                            className="mt-2 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamLogoUrl}
+                            onChangeText={setTeamLogoUrl}
+                            placeholder="Logo URL (optional)"
                             placeholderTextColor="#9CA3AF"
                           />
                           <View className="flex-row mt-2">
@@ -457,6 +573,8 @@ export default function TournamentDetails() {
                               onPress={() => {
                                 setCreatingFor(null);
                                 setTeamName("");
+                                setTeamSlogan("");
+                                setTeamLogoUrl("");
                               }}
                             >
                               <Text className="text-center text-gray-800">Cancel</Text>
@@ -515,6 +633,91 @@ export default function TournamentDetails() {
                               <Text className="text-xs text-blue-600">{showingAll ? "Hide players" : "See all players"}</Text>
                             </TouchableOpacity>
                           ) : null}
+                        </View>
+                      ) : null}
+                      {meta ? (
+                        <View className="mt-3 p-3 rounded-lg bg-indigo-50 border border-indigo-200 flex-row items-center">
+                          {meta.team_logo_url ? (
+                            <Image
+                              source={{ uri: meta.team_logo_url }}
+                              className="w-10 h-10 rounded-full mr-3"
+                            />
+                          ) : (
+                            <View className="w-10 h-10 rounded-full bg-indigo-100 mr-3 items-center justify-center">
+                              <Text className="text-xs font-semibold text-indigo-700">
+                                {((meta.team_name || c.name || "Team").toString().trim().slice(0, 2) || "TM").toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View className="flex-1">
+                            <Text className="text-sm font-semibold text-indigo-900">
+                              {meta.team_name || "Your team"}
+                            </Text>
+                            {meta.team_slogan ? (
+                              <Text className="text-xs text-indigo-800 mt-0.5">
+                                {meta.team_slogan}
+                              </Text>
+                            ) : null}
+                            <TouchableOpacity
+                              className="mt-2 self-start rounded-lg px-3 py-1 border border-indigo-300"
+                              onPress={() => {
+                                setEditingFor(c.id);
+                                setCreatingFor(null);
+                                setTeamName(meta.team_name || "");
+                                setTeamSlogan(meta.team_slogan || "");
+                                setTeamLogoUrl(meta.team_logo_url || "");
+                              }}
+                            >
+                              <Text className="text-xs font-semibold text-indigo-700">Edit team</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : null}
+                      {meta && editingFor === c.id ? (
+                        <View className="mt-2">
+                          <TextInput
+                            className="border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamName}
+                            onChangeText={setTeamName}
+                            placeholder="Team name"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <TextInput
+                            className="mt-2 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamSlogan}
+                            onChangeText={setTeamSlogan}
+                            placeholder="Team slogan (optional)"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <TextInput
+                            className="mt-2 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                            value={teamLogoUrl}
+                            onChangeText={setTeamLogoUrl}
+                            placeholder="Logo URL (optional)"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                          <View className="flex-row mt-2">
+                            <TouchableOpacity
+                              className={`mr-2 rounded-lg py-2 px-4 ${busyKey === ("ut-" + meta.id) ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
+                              onPress={() => onUpdateTeam(meta.id, c.id)}
+                              disabled={busyKey === ("ut-" + meta.id)}
+                            >
+                              <Text className={"text-center font-semibold " + (busyKey === ("ut-" + meta.id) ? "text-gray-500" : "text-white")}>
+                                Save
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              className="rounded-lg py-2 px-4 border border-gray-300"
+                              onPress={() => {
+                                setEditingFor(null);
+                                setTeamName("");
+                                setTeamSlogan("");
+                                setTeamLogoUrl("");
+                              }}
+                            >
+                              <Text className="text-center text-gray-800">Cancel</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       ) : null}
                     </View>
