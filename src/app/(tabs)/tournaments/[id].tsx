@@ -9,6 +9,7 @@ import { formatDateTimeLocal } from "@/utils/datetime";
 type Cat = {
   id: number;
   name?: string | null;
+  participation_type?: string | null;
   registration_fee?: number | null;
   max_teams?: number | null;
   members_per_team_min?: number | null;
@@ -658,18 +659,31 @@ export default function TournamentDetails() {
                                 {meta.team_slogan}
                               </Text>
                             ) : null}
-                            <TouchableOpacity
-                              className="mt-2 self-start rounded-lg px-3 py-1 border border-indigo-300"
-                              onPress={() => {
-                                setEditingFor(c.id);
-                                setCreatingFor(null);
-                                setTeamName(meta.team_name || "");
-                                setTeamSlogan(meta.team_slogan || "");
-                                setTeamLogoUrl(meta.team_logo_url || "");
-                              }}
-                            >
-                              <Text className="text-xs font-semibold text-indigo-700">Edit team</Text>
-                            </TouchableOpacity>
+                            <View className="flex-row flex-wrap gap-2 mt-2">
+                              <TouchableOpacity
+                                className="rounded-lg px-3 py-1 border border-indigo-300"
+                                onPress={() => {
+                                  setEditingFor(c.id);
+                                  setCreatingFor(null);
+                                  setTeamName(meta.team_name || "");
+                                  setTeamSlogan(meta.team_slogan || "");
+                                  setTeamLogoUrl(meta.team_logo_url || "");
+                                }}
+                              >
+                                <Text className="text-xs font-semibold text-indigo-700">Edit team</Text>
+                              </TouchableOpacity>
+
+                              {c.participation_type === 'team' && (
+                                <Link href={{
+                                    pathname: "/tournaments/[id]/roster",
+                                    params: { id: String(tid), entryId: String(meta.id) }
+                                } as any} asChild>
+                                    <TouchableOpacity className="rounded-lg px-3 py-1 bg-indigo-100 border border-indigo-200">
+                                        <Text className="text-xs font-semibold text-indigo-800">Manage Roster</Text>
+                                    </TouchableOpacity>
+                                </Link>
+                              )}
+                            </View>
                           </View>
                         </View>
                       ) : null}

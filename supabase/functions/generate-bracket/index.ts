@@ -86,7 +86,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Load category and tournament to validate
     const { data: cat, error: catErr } = await supabase
       .from("tournament_categories")
-      .select("id, tournament_id")
+      .select("id, tournament_id, participation_type")
       .eq("id", categoryId)
       .maybeSingle();
     if (catErr || !cat) {
@@ -118,15 +118,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // Prevent duplicate generation
-    const { count: existingCount } = await supabase
-      .from("matches")
-      .select("id", { count: "exact", head: true })
-      .eq("category_id", categoryId);
-    if ((existingCount || 0) > 0) {
-      return new Response(JSON.stringify({ ok: true, message: "Bracket already exists" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Check fixtures for team format, matches for others
+    const isTeamFormat = (cat as any).participation_type === 'team';
+    
+    if (isTeamFormat) {
+        const { count: existingFixtures } = await supabase
+            .from("fixtures")
+            .select("id", { count: "exact", head: true })
+            .eq("category_id", categoryId);
+        if ((existingFixtures || 0) > 0) {
+            return new Response(JSON.stringify({ ok: true, message: "Bracket already exists" }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+        }
+    } else {
+        const { count: existingCount } = await supabase
+        .from("matches")
+        .select("id", { count: "exact", head: true })
+        .eq("category_id", categoryId);
+        if ((existingCount || 0) > 0) {
+        return new Response(JSON.stringify({ ok: true, message: "Bracket already exists" }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+        }
     }
 
     // Load eligible entries
@@ -146,7 +162,152 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    const shuffled = seededShuffle(ids, categoryId);
+    if (isTeamFormat) {
+        // --- TEAM FORMAT: Round Robin with Explosion ---
+        const teamIds = [...ids];
+        // Polygon method for Round Robin
+        // If odd number of teams, add a dummy "bye" (null)
+        if (teamIds.length % 2 !== 0) {
+            teamIds.push(null as any);
+        }
+        
+        const n = teamIds.length;
+        const totalRounds = n - 1;
+        const matchesPerRound = n / 2;
+        
+        // Create Rounds records
+        const roundRows = Array.from({ length: totalRounds }, (_, idx) => ({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: idx + 1,
+            name: `Round ${idx + 1}`,
+        }));
+        
+        const { error: rErr } = await supabase.from("rounds").insert(roundRows);
+        if (rErr) throw rErr;
+
+        // Generate Fixtures
+        const fixturesToInsert: any[] = [];
+        
+        // We use a mutable array for rotation
+        let currentTeams = [...teamIds];
+
+        for (let r = 0; r < totalRounds; r++) {
+            for (let i = 0; i < matchesPerRound; i++) {
+                const t1 = currentTeams[i];
+                const t2 = currentTeams[n - 1 - i];
+                
+                // If either is null, it's a bye week for the other team. 
+                // We currently don't create fixtures for byes in RR unless requested.
+                // Directive says "system must handle BYE rounds". 
+                // Creating a fixture with status 'bye' might be useful for display.
+                
+                if (t1 !== null && t2 !== null) {
+                    fixturesToInsert.push({
+                        tournament_id: (cat as CategoryRow).tournament_id,
+                        category_id: categoryId,
+                        round_number: r + 1,
+                        entry1_id: t1,
+                        entry2_id: t2,
+                        status: 'scheduled'
+                    });
+                } else if (t1 !== null || t2 !== null) {
+                    // Bye fixture
+                    const teamId = t1 || t2;
+                    fixturesToInsert.push({
+                         tournament_id: (cat as CategoryRow).tournament_id,
+                         category_id: categoryId,
+                         round_number: r + 1,
+                         entry1_id: teamId,
+                         entry2_id: null,
+                         status: 'bye'
+                    });
+                }
+            }
+            
+            // Rotate teams: Fixed index 0, others rotate
+            // [0, 1, 2, 3, 4, 5] -> [0, 5, 1, 2, 3, 4]
+            const fixed = currentTeams[0];
+            const rotating = currentTeams.slice(1);
+            const last = rotating.pop();
+            if (last !== undefined) rotating.unshift(last);
+            currentTeams = [fixed, ...rotating];
+        }
+
+        // Insert fixtures
+        const { data: insertedFixtures, error: fErr } = await supabase
+            .from("fixtures")
+            .insert(fixturesToInsert)
+            .select("id, round_number, status");
+        
+        if (fErr) throw fErr;
+
+        // Explosion: Create 4 sub-matches for each scheduled fixture
+        const subMatchesToInsert: any[] = [];
+        
+        // Helper to get index in round for simple enumeration (optional)
+        let matchIndexCounter = 0;
+
+        for (const fix of (insertedFixtures as any[])) {
+            if (fix.status !== 'scheduled') continue;
+
+            // 1. MD (Session 1)
+            subMatchesToInsert.push({
+                tournament_id: (cat as CategoryRow).tournament_id,
+                category_id: categoryId,
+                round_number: fix.round_number,
+                index_in_round: ++matchIndexCounter,
+                fixture_id: fix.id,
+                sub_match_type: 'MD',
+                session_sequence: 1,
+                status: 'pending'
+            });
+            
+            // 2. WD (Session 1)
+            subMatchesToInsert.push({
+                tournament_id: (cat as CategoryRow).tournament_id,
+                category_id: categoryId,
+                round_number: fix.round_number,
+                index_in_round: ++matchIndexCounter,
+                fixture_id: fix.id,
+                sub_match_type: 'WD',
+                session_sequence: 1,
+                status: 'pending'
+            });
+
+            // 3. XD (Session 2)
+            subMatchesToInsert.push({
+                tournament_id: (cat as CategoryRow).tournament_id,
+                category_id: categoryId,
+                round_number: fix.round_number,
+                index_in_round: ++matchIndexCounter,
+                fixture_id: fix.id,
+                sub_match_type: 'XD',
+                session_sequence: 2,
+                status: 'pending'
+            });
+
+            // 4. RD (Session 2)
+            subMatchesToInsert.push({
+                tournament_id: (cat as CategoryRow).tournament_id,
+                category_id: categoryId,
+                round_number: fix.round_number,
+                index_in_round: ++matchIndexCounter,
+                fixture_id: fix.id,
+                sub_match_type: 'RD',
+                session_sequence: 2,
+                status: 'pending'
+            });
+        }
+
+        if (subMatchesToInsert.length > 0) {
+            const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
+            if (smErr) throw smErr;
+        }
+
+    } else {
+        // --- SINGLE ELIMINATION (Standard) ---
+        const shuffled = seededShuffle(ids, categoryId);
     const totalSlots = nextPow2(shuffled.length);
     const roundsCount = Math.log2(totalSlots) | 0;
 
@@ -250,6 +411,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const { error: aErr } = await supabase.from("matches").update(updates).eq("id", mId);
         if (aErr) throw aErr;
       }
+    }
     }
 
     return new Response(JSON.stringify({ ok: true }), {
