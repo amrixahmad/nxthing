@@ -7,29 +7,15 @@ export default function SeederScreen() {
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [teams, setTeams] = useState("4");
-  const [password, setPassword] = useState("");
 
   function log(msg: string) {
     setLogs((p) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p]);
   }
 
   async function runSeeder() {
-    if (!password) {
-      Alert.alert("Error", "Please enter the ALLOW_DEV_SEED secret as password to authorize this.");
-      return;
-    }
-
     setLoading(true);
     log("Starting seeder...");
     try {
-      // We pass the password as a header or body to verify permission if we wanted to enforce it on client side,
-      // but the Edge Function checks Deno.env.get("ALLOW_DEV_SEED"). 
-      // NOTE: The Edge Function I wrote earlier checks *server-side* env var. 
-      // It doesn't take a password from client. It assumes if the function is running, it's allowed IF the env var is true.
-      // So strictly speaking, the password input here isn't used by the function unless we modify the function.
-      // But usually we want some gatekeeper.
-      // For now, we'll just invoke it. The protection is that the *server* must have ALLOW_DEV_SEED=true.
-      
       const { data, error } = await supabase.functions.invoke("seed-team-tournament", {
         body: {
           teams: Number(teams),
