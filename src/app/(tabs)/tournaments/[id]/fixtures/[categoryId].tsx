@@ -340,6 +340,22 @@ export default function FixturesByCategory() {
       );
   }
 
+  async function generateBracket() {
+    if (!organizerId || session?.user?.id !== organizerId) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke("generate-bracket", {
+        body: { category_id: cid }
+      });
+      if (error) throw error;
+      await load();
+    } catch (e: any) {
+      alert("Error generating bracket: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-gray-50">
       <Stack.Screen
@@ -375,8 +391,16 @@ export default function FixturesByCategory() {
         {loading ? (
           <View className="items-center justify-center py-10"><ActivityIndicator /></View>
         ) : roundsSorted.length === 0 ? (
-          <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <Text className="text-gray-700">Bracket not generated yet.</Text>
+          <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 items-center">
+            <Text className="text-gray-700 mb-4">Bracket not generated yet.</Text>
+            {organizerId && session?.user?.id === organizerId && (
+                <TouchableOpacity 
+                    onPress={generateBracket}
+                    className="bg-blue-600 active:bg-blue-700 px-6 py-3 rounded-lg shadow-sm"
+                >
+                    <Text className="text-white font-bold">Generate Bracket</Text>
+                </TouchableOpacity>
+            )}
           </View>
         ) : (
           <>
