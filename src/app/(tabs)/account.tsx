@@ -18,7 +18,7 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, Link } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 
 /**
@@ -338,6 +338,20 @@ export default function Account() {
               🚪 Sign Out
             </Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Dev Tools (Only visible in development or if enabled) */}
+      <View className="mx-4 mt-4 bg-white rounded-xl shadow-sm border border-gray-100">
+        <View className="p-6">
+            <Text className="text-lg font-semibold text-gray-900 mb-4">
+                Developer Tools
+            </Text>
+            <Link href={"/dev/seed" as any} asChild>
+                <TouchableOpacity className="bg-gray-100 active:bg-gray-200 rounded-lg py-3 px-4 flex-row items-center justify-center border border-gray-300">
+                    <Text className="text-gray-700 font-semibold mr-2">🌱 Tournament Seeder</Text>
+                </TouchableOpacity>
+            </Link>
         </View>
       </View>
 
