@@ -147,10 +147,28 @@ export default function HostMatchDetail() {
       const winnerId = winner === 1 ? match.entry1_id : winner === 2 ? match.entry2_id : null;
 
       const scorePayload = games.map((g) => ({ p1: Number(g.p1 || 0), p2: Number(g.p2 || 0) }));
+      const totals = scorePayload.reduce(
+        (acc, g) => {
+          acc.p1 += Number(g.p1 || 0);
+          acc.p2 += Number(g.p2 || 0);
+          return acc;
+        },
+        { p1: 0, p2: 0 }
+      );
+
+      const updates: any = {
+        status,
+        court: court || null,
+        scheduled_at: scheduledAt,
+        winner_entry_id: winnerId,
+        score_json: scorePayload,
+        entry1_points: totals.p1,
+        entry2_points: totals.p2,
+      };
 
       const { error: uErr } = await supabase
         .from("matches")
-        .update({ status, court: court || null, scheduled_at: scheduledAt, winner_entry_id: winnerId, score_json: scorePayload })
+        .update(updates)
         .eq("id", match.id);
       if (uErr) throw uErr;
 

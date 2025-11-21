@@ -74,13 +74,15 @@ export default function FixturesByCategory() {
     setMatches((m as any[]) || []);
 
     // If team, fetch fixtures
+    let fixturesData: any[] = [];
     if (isTeam) {
-        const { data: f } = await supabase
-            .from("fixtures")
-            .select("id,round_number,entry1_id,entry2_id,status")
-            .eq("category_id", cid)
-            .order("round_number", { ascending: true });
-        setFixtures((f as any[]) || []);
+      const { data: f } = await supabase
+        .from("fixtures")
+        .select("id,round_number,entry1_id,entry2_id,status")
+        .eq("category_id", cid)
+        .order("round_number", { ascending: true });
+      fixturesData = (f as any[]) || [];
+      setFixtures(fixturesData);
     }
 
     const idsSet = new Set<number>();
@@ -88,39 +90,13 @@ export default function FixturesByCategory() {
       if (row.entry1_id) idsSet.add(row.entry1_id as number);
       if (row.entry2_id) idsSet.add(row.entry2_id as number);
     });
-    
-    // Also add from fixtures if team
-    if (isTeam) {
-        // We need names for fixture teams
-        // matches have sub-match entries (players?), wait.
-        // No, in team format, entry1_id on fixture is the TEAM entry.
-        // matches entry1_id might be NULL if players not assigned yet?
-        // Or matches entry1_id IS the TEAM entry?
-        // Currently match logic uses entry1_id as the "Entry" ID.
-        // For team format, sub-matches: entry1_id is STILL the team entry ID? 
-        // NO. The directive says "A1 vs B1". A1 is a Player?
-        // Existing schema: matches.entry1_id references entries(id).
-        // entries table has created_by (Profile).
-        // But for sub-matches, we might want to show Player Names.
-        // However, the match record links to ENTRY.
-        // Wait, `matches.entry1_id` references `entries`.
-        // If we want to track individual player performance, we might need to link to `profiles` or `entry_members`?
-        // The current schema: matches links to ENTRIES.
-        // For Team Format, the "Entry" is the Team.
-        // So `matches.entry1_id` refers to the Team Entry.
-        // BUT a sub-match is Player vs Player.
-        // If `matches` links to `entries`, we assume the "Entry" represents the entity competing.
-        // But the players are different.
-        // If we use the SAME entry_id for all sub-matches, we can't distinguish A1 from A2 in the database relationships easily, 
-        // except by logic (e.g. "This match is MD, so look up MD players for Entry A").
-        // The schema I didn't change for `matches`: it still points to `entries`.
-        // So `entry1_id` is the Team Entry ID.
-        // To display "Player Name" instead of "Team Name" in sub-matches, 
-        // we need to look up the Roster Slot for that team + sub_match_type.
-        
-        // So for team format, we need to fetch `entry_roster_slots` too?
-        // Or just fetch all Entry Members and we figure it out?
-        // `entry_roster_slots` has `slot_code`.
+
+    // Also add from fixtures if team so we can label fixtures with team names
+    if (isTeam && fixturesData.length > 0) {
+      fixturesData.forEach((row: any) => {
+        if (row.entry1_id) idsSet.add(row.entry1_id as number);
+        if (row.entry2_id) idsSet.add(row.entry2_id as number);
+      });
     }
 
     const ids = Array.from(idsSet);
@@ -234,13 +210,27 @@ export default function FixturesByCategory() {
       const points: Record<number, { id: number; name: string; total: number; diff: number }> = {};
       
       matches.forEach(m => {
-          if (m.entry1_id && m.entry1_points) {
-              if (!points[m.entry1_id]) points[m.entry1_id] = { id: m.entry1_id, name: entryNames[m.entry1_id] || `Entry #${m.entry1_id}`, total: 0, diff: 0 };
+          if (m.entry1_id != null && m.entry1_points != null) {
+              if (!points[m.entry1_id]) {
+                  points[m.entry1_id] = {
+                      id: m.entry1_id,
+                      name: entryNames[m.entry1_id] || `Entry #${m.entry1_id}`,
+                      total: 0,
+                      diff: 0,
+                  };
+              }
               points[m.entry1_id].total += m.entry1_points;
               points[m.entry1_id].diff += (m.entry1_points - (m.entry2_points || 0));
           }
-          if (m.entry2_id && m.entry2_points) {
-              if (!points[m.entry2_id]) points[m.entry2_id] = { id: m.entry2_id, name: entryNames[m.entry2_id] || `Entry #${m.entry2_id}`, total: 0, diff: 0 };
+          if (m.entry2_id != null && m.entry2_points != null) {
+              if (!points[m.entry2_id]) {
+                  points[m.entry2_id] = {
+                      id: m.entry2_id,
+                      name: entryNames[m.entry2_id] || `Entry #${m.entry2_id}`,
+                      total: 0,
+                      diff: 0,
+                  };
+              }
               points[m.entry2_id].total += m.entry2_points;
               points[m.entry2_id].diff += (m.entry2_points - (m.entry1_points || 0));
           }
