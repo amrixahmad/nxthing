@@ -344,13 +344,20 @@ export default function FixturesByCategory() {
     if (!organizerId || session?.user?.id !== organizerId) return;
     setLoading(true);
     try {
-      const { error } = await supabase.functions.invoke("generate-bracket", {
+      const { data, error } = await supabase.functions.invoke("generate-bracket", {
         body: { category_id: cid }
       });
-      if (error) throw error;
+
+      if (error) {
+        const payload: any = data as any;
+        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        alert("Error generating bracket: " + serverMsg);
+        return;
+      }
+
       await load();
     } catch (e: any) {
-      alert("Error generating bracket: " + e.message);
+      alert("Error generating bracket: " + (e?.message || String(e)));
     } finally {
       setLoading(false);
     }

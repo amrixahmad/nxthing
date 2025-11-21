@@ -65,8 +65,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // 2. Create Tournament
     const title = body.title || `Team Championship ${seedTag}`;
     const now = new Date();
+    // For dev seeding, we want registration already closed so brackets can be generated immediately.
+    // Tournament dates can be in the future, but registration_end_date must be in the past.
     const start = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
     const end = new Date(now.getTime() + 9 * 24 * 3600 * 1000);
+    const regStart = new Date(now.getTime() - 3 * 24 * 3600 * 1000);
+    const regEnd = new Date(now.getTime() - 1 * 24 * 3600 * 1000);
 
     const { data: tIns, error: tErr } = await supabase.from("tournaments").insert({
       organizer_id: organizer_uuid,
@@ -76,8 +80,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       venue_name: body.venue || "Dev Court 1",
       start_date: start.toISOString(),
       end_date: end.toISOString(),
-      registration_start_date: new Date(now.getTime() - 2 * 24 * 3600 * 1000).toISOString(),
-      registration_end_date: new Date(now.getTime() + 1 * 24 * 3600 * 1000).toISOString(),
+      registration_start_date: regStart.toISOString(),
+      registration_end_date: regEnd.toISOString(),
       status: "registration_open",
       format: "round_robin",
     }).select("id").single();
