@@ -270,7 +270,18 @@ export default function HostMatchDetail() {
         .from("matches")
         .update(updates)
         .eq("id", match.id);
-      if (uErr) throw uErr;
+      if (uErr) {
+        const rawMsg = String((uErr as any)?.message || "");
+        if (rawMsg.includes("Session 2 match cannot start before Session 1 matches")) {
+          toast.show({
+            type: "error",
+            message: "XD / RD (Session 2) must be scheduled at or after the MD / WD (Session 1) matches for this fixture.",
+          });
+          return;
+        }
+        toast.show({ type: "error", message: rawMsg || "Unable to save match" });
+        return;
+      }
 
       // propagate to next match if winner selected and linkage exists
       if (winnerId && match.next_match_id && match.next_match_slot) {
@@ -282,7 +293,9 @@ export default function HostMatchDetail() {
       const roundParam = match.round_number;
       router.replace({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(match.category_id), initialRound: String(roundParam) } } as any);
     } catch (e) {
-      if (e instanceof Error) Alert.alert("Error", e.message);
+      if (e instanceof Error) {
+        toast.show({ type: "error", message: e.message || "Unable to save match" });
+      }
     }
   }
 
