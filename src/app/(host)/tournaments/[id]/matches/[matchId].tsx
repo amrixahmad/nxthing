@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useToast } from "@/src/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/context/SessionProvider";
-import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/src/utils/datetime";
+import { toDMY, toHM12, combineDateTime, parseTime12, parseDMY } from "@/src/utils/datetime";
 
  type Match = {
   id: number;
@@ -20,6 +21,9 @@ import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/src/utils/datetim
   score_json: any | null;
   next_match_id: number | null;
   next_match_slot: 1 | 2 | null;
+  fixture_id: number | null;
+  sub_match_type: string | null;
+  session_sequence: number | null;
 };
 
 export default function HostMatchDetail() {
@@ -41,6 +45,8 @@ export default function HostMatchDetail() {
   const [timeStr, setTimeStr] = useState<string>("");
   const [winner, setWinner] = useState<0 | 1 | 2 | null>(null); // 0 none, 1 p1, 2 p2
   const [games, setGames] = useState<Array<{ p1: string; p2: string }>>([]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   function shortName(s: string) {
     const str = String(s || "").trim();
@@ -52,11 +58,36 @@ export default function HostMatchDetail() {
       setLoading(true);
       const { data: m } = await supabase
         .from("matches")
-        .select("id,tournament_id,category_id,round_number,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,next_match_id,next_match_slot")
+        .select(
+          "id,tournament_id,category_id,round_number,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,next_match_id,next_match_slot,fixture_id,sub_match_type,session_sequence"
+        )
         .eq("id", mid)
         .maybeSingle();
-      const mm = (m as any) as Match | null;
-      if (!mm) throw new Error("Match not found");
+      const mmRaw = (m as any) as Match | null;
+      if (!mmRaw) throw new Error("Match not found");
+
+      // Resolve participants via fixture for team sub-matches where entry ids are not set on the match row
+      let effectiveEntry1Id = mmRaw.entry1_id;
+      let effectiveEntry2Id = mmRaw.entry2_id;
+
+      if (mmRaw.fixture_id) {
+        const { data: fx } = await supabase
+          .from("fixtures")
+          .select("entry1_id,entry2_id")
+          .eq("id", mmRaw.fixture_id)
+          .maybeSingle();
+        if (fx) {
+          const fr = fx as any;
+          if (!effectiveEntry1Id && fr.entry1_id) effectiveEntry1Id = fr.entry1_id as number;
+          if (!effectiveEntry2Id && fr.entry2_id) effectiveEntry2Id = fr.entry2_id as number;
+        }
+      }
+
+      const mm: Match = {
+        ...mmRaw,
+        entry1_id: effectiveEntry1Id,
+        entry2_id: effectiveEntry2Id,
+      };
       // Organizer guard
       const { data: tOrg } = await supabase
         .from("tournaments")
@@ -156,8 +187,14 @@ export default function HostMatchDetail() {
         { p1: 0, p2: 0 }
       );
 
+      // If a schedule has been set for a previously pending match, auto-mark it as scheduled
+      let effectiveStatus = status;
+      if (scheduledAt && status === "pending") {
+        effectiveStatus = "scheduled";
+      }
+
       const updates: any = {
-        status,
+        status: effectiveStatus,
         court: court || null,
         scheduled_at: scheduledAt,
         winner_entry_id: winnerId,
@@ -269,19 +306,64 @@ export default function HostMatchDetail() {
               </View>
 
               <Text className="text-base font-semibold text-gray-900 mb-2">Schedule</Text>
-              <View className="mb-3">
-                <Text className="text-sm text-gray-700 mb-1">Date (dd/mm/yyyy)</Text>
-                <TextInput className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white" value={dateStr} onChangeText={setDateStr} placeholder="dd/mm/yyyy" placeholderTextColor="#9CA3AF" />
-              </View>
-              <View className="mb-3">
-                <Text className="text-sm text-gray-700 mb-1">Time (h:mm AM/PM)</Text>
-                <View className="flex-row items-center">
-                  <TextInput className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white" value={timeStr} onChangeText={setTimeStr} placeholder="h:mm AM/PM" placeholderTextColor="#9CA3AF" />
-                  <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={setNow}>
-                    <Text className="text-gray-800">Now</Text>
+              <>
+                <View className="mb-3">
+                  <Text className="text-sm text-gray-700 mb-1">Date</Text>
+                  <TouchableOpacity
+                    className="border border-gray-300 rounded-lg p-3 bg-white"
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text className={dateStr ? "text-gray-900" : "text-gray-400"}>{dateStr || "Pick date"}</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+                <View className="mb-3">
+                  <Text className="text-sm text-gray-700 mb-1">Time</Text>
+                  <View className="flex-row items-center">
+                    <TouchableOpacity
+                      className="flex-1 border border-gray-300 rounded-lg p-3 bg-white"
+                      onPress={() => setShowTimePicker(true)}
+                    >
+                      <Text className={timeStr ? "text-gray-900" : "text-gray-400"}>{timeStr || "Pick time"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={setNow}>
+                      <Text className="text-gray-800">Now</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    mode="date"
+                    display="default"
+                    value={parseDMY(dateStr || "") || new Date()}
+                    onChange={(_, selectedDate) => {
+                      setShowDatePicker(false);
+                      if (!selectedDate) return;
+                      setDateStr(toDMY(selectedDate));
+                    }}
+                  />
+                )}
+
+                {showTimePicker && (
+                  <DateTimePicker
+                    mode="time"
+                    display="default"
+                    value={(() => {
+                      const base = parseDMY(dateStr || "") || new Date();
+                      const parsedTime = parseTime12(timeStr || "");
+                      if (parsedTime) {
+                        base.setHours(parsedTime.hours24, parsedTime.minutes, 0, 0);
+                      }
+                      return base;
+                    })()}
+                    onChange={(_, selectedDate) => {
+                      setShowTimePicker(false);
+                      if (!selectedDate) return;
+                      setTimeStr(toHM12(selectedDate));
+                    }}
+                  />
+                )}
+              </>
 
               <View className="mb-4">
                 <Text className="text-base font-semibold text-gray-900 mb-2">Court</Text>

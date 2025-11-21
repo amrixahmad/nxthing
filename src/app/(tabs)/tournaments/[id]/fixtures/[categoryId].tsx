@@ -306,8 +306,26 @@ export default function FixturesByCategory() {
   }
 
   function statusBadge(s: string) {
-    const cls = s === 'bye' ? 'bg-gray-100' : s === 'completed' ? 'bg-green-100' : s === 'in_progress' ? 'bg-blue-100' : 'bg-gray-100';
-    const txt = s === 'bye' ? 'Bye' : s === 'completed' ? 'Completed' : s === 'in_progress' ? 'Live' : 'Pending';
+    const cls =
+      s === 'bye'
+        ? 'bg-gray-100'
+        : s === 'completed'
+        ? 'bg-green-100'
+        : s === 'in_progress'
+        ? 'bg-blue-100'
+        : s === 'scheduled'
+        ? 'bg-yellow-100'
+        : 'bg-gray-100';
+    const txt =
+      s === 'bye'
+        ? 'Bye'
+        : s === 'completed'
+        ? 'Completed'
+        : s === 'in_progress'
+        ? 'Live'
+        : s === 'scheduled'
+        ? 'Scheduled'
+        : 'Pending';
     return (
       <View className={`px-2 py-1 rounded ${cls}`}>
         <Text className={s === 'completed' ? 'text-green-800 text-xs' : s === 'in_progress' ? 'text-blue-800 text-xs' : 'text-gray-800 text-xs'}>{txt}</Text>
