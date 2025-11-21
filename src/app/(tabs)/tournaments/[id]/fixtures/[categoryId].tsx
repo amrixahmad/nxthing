@@ -45,6 +45,7 @@ export default function FixturesByCategory() {
   const [fixtures, setFixtures] = useState<FixtureRow[]>([]);
   const [activeRound, setActiveRound] = useState<number | null>(null);
   const [entryNames, setEntryNames] = useState<Record<number, string>>({});
+  const [rosterByEntry, setRosterByEntry] = useState<Record<number, Record<string, string[]>>>({});
   const [organizerId, setOrganizerId] = useState<string | null>(null);
   const [isTeamFormat, setIsTeamFormat] = useState(false);
   const [activeTab, setActiveTab] = useState<"fixtures" | "leaderboard">("fixtures");
@@ -105,38 +106,72 @@ export default function FixturesByCategory() {
         .from("entry_members")
         .select("entry_id, display_name, profile:profile_id(id, username, full_name)")
         .in("entry_id", ids);
-        
+
       const map: Record<number, string[]> = {};
+      const profileNameById: Record<string, string> = {};
+      const nameByEntryProfile: Record<number, Record<string, string>> = {};
       for (const row of (members as any[]) || []) {
         const entryId = row.entry_id as number;
         const prof = row.profile as any;
-        const fallback = prof?.id ? `Player ${String(prof.id).slice(0, 6)}` : "Player";
+        const pid = String(prof?.id || "");
+        const fallback = pid ? `Player ${pid.slice(0, 6)}` : "Player";
         const nameRaw = row.display_name || prof?.full_name || prof?.username || fallback;
         const name = String(nameRaw).trim();
         if (!map[entryId]) map[entryId] = [];
         map[entryId].push(name);
+        if (pid) {
+          profileNameById[pid] = name;
+          if (!nameByEntryProfile[entryId]) nameByEntryProfile[entryId] = {};
+          nameByEntryProfile[entryId][pid] = name;
+        }
       }
-      
+
       const flat: Record<number, string> = {};
       const teamNamesMap: Record<number, string> = {};
-      
+
       // Also fetch Team Names directly from entries if available
       const { data: entryData } = await supabase.from("entries").select("id, team_name").in("id", ids);
       (entryData || []).forEach((e: any) => {
-          if (e.team_name) teamNamesMap[e.id] = e.team_name;
+        if (e.team_name) teamNamesMap[e.id] = e.team_name;
       });
 
       Object.keys(map).forEach((k) => {
         const ek = Number(k);
         if (teamNamesMap[ek]) {
-            flat[ek] = teamNamesMap[ek];
+          flat[ek] = teamNamesMap[ek];
         } else {
-            flat[ek] = map[ek].join(" / ");
+          flat[ek] = map[ek].join(" / ");
         }
       });
+
       setEntryNames(flat);
+
+      // Load roster slots for these entries to resolve MD/WD/XD/RD pairs
+      const { data: rosterRows } = await supabase
+        .from("entry_roster_slots")
+        .select("entry_id, profile_id, slot_code")
+        .in("entry_id", ids);
+
+      const rosterMap: Record<number, Record<string, string[]>> = {};
+      for (const row of (rosterRows as any[]) || []) {
+        const entryId = row.entry_id as number;
+        const code = String(row.slot_code || "");
+        const pid = String(row.profile_id || "");
+        const perEntryNames = nameByEntryProfile[entryId];
+        const seededName = perEntryNames ? perEntryNames[pid] : undefined;
+        const baseName =
+          seededName ||
+          profileNameById[pid] ||
+          (pid ? `Player ${pid.slice(0, 6)}` : "Player");
+        if (!rosterMap[entryId]) rosterMap[entryId] = {};
+        if (!rosterMap[entryId][code]) rosterMap[entryId][code] = [];
+        rosterMap[entryId][code].push(baseName);
+      }
+
+      setRosterByEntry(rosterMap);
     } else {
       setEntryNames({});
+      setRosterByEntry({});
     }
 
     const { data: tdata } = await supabase
@@ -207,37 +242,62 @@ export default function FixturesByCategory() {
   // Leaderboard Calculation
   const leaderboard = useMemo(() => {
       if (!isTeamFormat) return [];
+
+      // Map fixture -> team entries
+      const fixtureTeams: Record<number, { t1: number | null; t2: number | null }> = {};
+      for (const f of fixtures) {
+        fixtureTeams[f.id] = { t1: f.entry1_id, t2: f.entry2_id };
+      }
+
       const points: Record<number, { id: number; name: string; total: number; diff: number }> = {};
-      
-      matches.forEach(m => {
-          if (m.entry1_id != null && m.entry1_points != null) {
-              if (!points[m.entry1_id]) {
-                  points[m.entry1_id] = {
-                      id: m.entry1_id,
-                      name: entryNames[m.entry1_id] || `Entry #${m.entry1_id}`,
-                      total: 0,
-                      diff: 0,
-                  };
-              }
-              points[m.entry1_id].total += m.entry1_points;
-              points[m.entry1_id].diff += (m.entry1_points - (m.entry2_points || 0));
+
+      matches.forEach((m) => {
+        if (!m.fixture_id) return;
+        const fx = fixtureTeams[m.fixture_id];
+        if (!fx) return;
+
+        const team1 = fx.t1;
+        const team2 = fx.t2;
+        const p1 = m.entry1_points;
+        const p2 = m.entry2_points;
+
+        // Only count matches where points have been recorded
+        const hasAnyScore = p1 != null || p2 != null;
+        if (!hasAnyScore) return;
+
+        if (team1 != null) {
+          if (!points[team1]) {
+            points[team1] = {
+              id: team1,
+              name: entryNames[team1] || `Entry #${team1}`,
+              total: 0,
+              diff: 0,
+            };
           }
-          if (m.entry2_id != null && m.entry2_points != null) {
-              if (!points[m.entry2_id]) {
-                  points[m.entry2_id] = {
-                      id: m.entry2_id,
-                      name: entryNames[m.entry2_id] || `Entry #${m.entry2_id}`,
-                      total: 0,
-                      diff: 0,
-                  };
-              }
-              points[m.entry2_id].total += m.entry2_points;
-              points[m.entry2_id].diff += (m.entry2_points - (m.entry1_points || 0));
+          if (p1 != null) {
+            points[team1].total += p1;
+            points[team1].diff += p1 - (p2 || 0);
           }
+        }
+
+        if (team2 != null) {
+          if (!points[team2]) {
+            points[team2] = {
+              id: team2,
+              name: entryNames[team2] || `Entry #${team2}`,
+              total: 0,
+              diff: 0,
+            };
+          }
+          if (p2 != null) {
+            points[team2].total += p2;
+            points[team2].diff += p2 - (p1 || 0);
+          }
+        }
       });
-      
+
       return Object.values(points).sort((a, b) => b.total - a.total || b.diff - a.diff);
-  }, [matches, entryNames, isTeamFormat]);
+  }, [matches, fixtures, entryNames, isTeamFormat]);
 
   function labelEntry(id: number | null) {
     if (!id) return 'Bye';
@@ -261,6 +321,15 @@ export default function FixturesByCategory() {
     return 'text-gray-900';
   }
   
+  function slotPairLabel(entryId: number | null, slot: string | null | undefined): string {
+    if (!entryId || !slot) return "";
+    const perEntry = rosterByEntry[entryId];
+    if (!perEntry) return "";
+    const names = perEntry[slot] || [];
+    if (names.length === 0) return "";
+    return names.join(" / ");
+  }
+
   // Render Team Format Fixture
   function renderFixture(f: FixtureRow) {
       const subs = matchesByFixture[f.id] || [];
@@ -297,6 +366,14 @@ export default function FixturesByCategory() {
   }
   
   function renderSubMatch(m: MatchRow) {
+      const leftPair = slotPairLabel(
+        fixtures.find((fx) => fx.id === m.fixture_id)?.entry1_id ?? null,
+        m.sub_match_type
+      );
+      const rightPair = slotPairLabel(
+        fixtures.find((fx) => fx.id === m.fixture_id)?.entry2_id ?? null,
+        m.sub_match_type
+      );
       return (
           <TouchableOpacity 
             key={m.id} 
@@ -307,24 +384,34 @@ export default function FixturesByCategory() {
                 }
             }}
           >
-             <View className="flex-row items-center w-1/3">
-                 <View className="w-6 h-6 rounded bg-indigo-100 items-center justify-center mr-2">
-                     <Text className="text-xs font-bold text-indigo-700">{m.sub_match_type}</Text>
+             <View className="w-1/3 pr-1">
+                 <View className="flex-row items-center">
+                     <View className="w-6 h-6 rounded bg-indigo-100 items-center justify-center mr-2">
+                         <Text className="text-xs font-bold text-indigo-700">{m.sub_match_type}</Text>
+                     </View>
+                     {m.entry1_points !== null && (
+                         <Text className="font-semibold text-gray-900 ml-1">{m.entry1_points}</Text>
+                     )}
                  </View>
-                 {m.entry1_points !== null && (
-                     <Text className="font-semibold text-gray-900 ml-1">{m.entry1_points}</Text>
-                 )}
+                 {leftPair ? (
+                   <Text className="text-[10px] text-gray-600 mt-0.5" numberOfLines={1}>{leftPair}</Text>
+                 ) : null}
              </View>
              
              <View className="w-1/3 items-center">
                  {statusBadge(m.status)}
              </View>
              
-             <View className="flex-row items-center justify-end w-1/3">
-                 {m.entry2_points !== null && (
-                     <Text className="font-semibold text-gray-900 mr-1">{m.entry2_points}</Text>
-                 )}
-                 {m.court && <Text className="text-[10px] text-gray-400 ml-2">{m.court}</Text>}
+             <View className="w-1/3 pl-1 items-end">
+                 <View className="flex-row items-center justify-end">
+                     {m.entry2_points !== null && (
+                         <Text className="font-semibold text-gray-900 mr-1">{m.entry2_points}</Text>
+                     )}
+                     {m.court && <Text className="text-[10px] text-gray-400 ml-2">{m.court}</Text>}
+                 </View>
+                 {rightPair ? (
+                   <Text className="text-[10px] text-gray-600 mt-0.5" numberOfLines={1}>{rightPair}</Text>
+                 ) : null}
              </View>
           </TouchableOpacity>
       );
