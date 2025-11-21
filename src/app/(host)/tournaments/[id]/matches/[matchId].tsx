@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useToast } from "@/src/components/Toast";
@@ -47,10 +47,73 @@ export default function HostMatchDetail() {
   const [games, setGames] = useState<Array<{ p1: string; p2: string }>>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [timeHour, setTimeHour] = useState<number>(9);
+  const [timeMinute, setTimeMinute] = useState<number>(0);
+  const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
 
   function shortName(s: string) {
     const str = String(s || "").trim();
     return str.length > 28 ? str.slice(0, 28) + "…" : str || "-";
+  }
+
+  function monthMatrix(y: number, m: number) {
+    const first = new Date(y, m, 1);
+    const firstWeekday = first.getDay();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const cells: Array<number | null> = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+    const rows: Array<Array<number | null>> = [];
+    for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+    return rows;
+  }
+
+  function openCalendarForSchedule() {
+    const dt = parseDMY(dateStr || "") || new Date();
+    setCalYear(dt.getFullYear());
+    setCalMonth(dt.getMonth());
+    setCalendarOpen(true);
+  }
+
+  function selectCalendarDay(day: number) {
+    const dt = new Date(calYear, calMonth, day);
+    const dmy = toDMY(dt);
+    setDateStr(dmy);
+    setCalendarOpen(false);
+  }
+
+  function openWebTimePicker() {
+    const v = timeStr;
+    const parsed = parseTime12(v || "");
+    if (parsed) {
+      let h12 = parsed.hours24 % 12;
+      if (h12 === 0) h12 = 12;
+      setTimeHour(h12);
+      setTimeAmPm(parsed.hours24 < 12 ? "AM" : "PM");
+      setTimeMinute(parsed.minutes);
+    } else {
+      const now = new Date();
+      let h = now.getHours();
+      let h12 = h % 12;
+      if (h12 === 0) h12 = 12;
+      setTimeHour(h12);
+      setTimeAmPm(h < 12 ? "AM" : "PM");
+      setTimeMinute(now.getMinutes() - (now.getMinutes() % 5));
+    }
+    setTimeOpen(true);
+  }
+
+  function confirmWebTime() {
+    const hh = String(timeHour);
+    const mm = String(timeMinute).padStart(2, "0");
+    const val = `${hh}:${mm} ${timeAmPm}`;
+    setTimeStr(val);
+    setTimeOpen(false);
   }
 
   async function load() {
@@ -311,7 +374,10 @@ export default function HostMatchDetail() {
                   <Text className="text-sm text-gray-700 mb-1">Date</Text>
                   <TouchableOpacity
                     className="border border-gray-300 rounded-lg p-3 bg-white"
-                    onPress={() => setShowDatePicker(true)}
+                    onPress={() => {
+                      if (Platform.OS === "web") openCalendarForSchedule();
+                      else setShowDatePicker(true);
+                    }}
                   >
                     <Text className={dateStr ? "text-gray-900" : "text-gray-400"}>{dateStr || "Pick date"}</Text>
                   </TouchableOpacity>
@@ -321,7 +387,10 @@ export default function HostMatchDetail() {
                   <View className="flex-row items-center">
                     <TouchableOpacity
                       className="flex-1 border border-gray-300 rounded-lg p-3 bg-white"
-                      onPress={() => setShowTimePicker(true)}
+                      onPress={() => {
+                        if (Platform.OS === "web") openWebTimePicker();
+                        else setShowTimePicker(true);
+                      }}
                     >
                       <Text className={timeStr ? "text-gray-900" : "text-gray-400"}>{timeStr || "Pick time"}</Text>
                     </TouchableOpacity>
@@ -331,7 +400,7 @@ export default function HostMatchDetail() {
                   </View>
                 </View>
 
-                {showDatePicker && (
+                {showDatePicker && Platform.OS !== "web" && (
                   <DateTimePicker
                     mode="date"
                     display="default"
@@ -344,7 +413,7 @@ export default function HostMatchDetail() {
                   />
                 )}
 
-                {showTimePicker && (
+                {showTimePicker && Platform.OS !== "web" && (
                   <DateTimePicker
                     mode="time"
                     display="default"
@@ -382,6 +451,152 @@ export default function HostMatchDetail() {
           )}
         </View>
       </View>
+
+      {calendarOpen && Platform.OS === "web" && (
+        <Modal visible={calendarOpen} transparent animationType="fade" onRequestClose={() => setCalendarOpen(false)}>
+          <View className="flex-1 bg-black/40 items-center justify-center px-4">
+            <View className="w-full max-w-md bg-white rounded-xl p-4">
+              <View className="flex-row items-center justify-between mb-3">
+                <TouchableOpacity
+                  className="px-3 py-2"
+                  onPress={() => {
+                    setCalMonth((m) => {
+                      const nm = m - 1;
+                      if (nm < 0) {
+                        setCalYear((y) => y - 1);
+                        return 11;
+                      }
+                      return nm;
+                    });
+                  }}
+                >
+                  <Text className="text-lg">‹</Text>
+                </TouchableOpacity>
+                <Text className="text-lg font-semibold">
+                  {new Date(calYear, calMonth, 1).toLocaleString(undefined, { month: "long", year: "numeric" })}
+                </Text>
+                <TouchableOpacity
+                  className="px-3 py-2"
+                  onPress={() => {
+                    setCalMonth((m) => {
+                      const nm = m + 1;
+                      if (nm > 11) {
+                        setCalYear((y) => y + 1);
+                        return 0;
+                      }
+                      return nm;
+                    });
+                  }}
+                >
+                  <Text className="text-lg">›</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View className="flex-row justify-between px-2 mb-2">
+                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((w) => (
+                  <Text key={w} className="w-10 text-center text-xs text-gray-500">{w}</Text>
+                ))}
+              </View>
+
+              {monthMatrix(calYear, calMonth).map((row, i) => (
+                <View key={i} className="flex-row justify-between px-2 mb-1">
+                  {row.map((d, j) => (
+                    <TouchableOpacity
+                      key={j}
+                      disabled={!d}
+                      onPress={() => d && selectCalendarDay(d)}
+                      className={`w-10 h-10 items-center justify-center rounded-lg ${d ? "bg-gray-100 active:bg-gray-200" : ""}`}
+                    >
+                      <Text className={`text-sm ${d ? "text-gray-800" : "text-transparent"}`}>{d ?? 0}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))}
+
+              <TouchableOpacity className="mt-3 py-3 rounded-lg border border-gray-300" onPress={() => setCalendarOpen(false)}>
+                <Text className="text-center text-gray-700">Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {timeOpen && Platform.OS === "web" && (
+        <Modal visible={timeOpen} transparent animationType="fade" onRequestClose={() => setTimeOpen(false)}>
+          <View className="flex-1 bg-black/40 items-center justify-center px-4">
+            <View className="w-full max-w-sm bg-white rounded-xl p-4">
+              <Text className="text-lg font-semibold mb-3">Pick time</Text>
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">Hours</Text>
+                  <View className="flex-row items-center">
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h % 12) + 1)}>
+                      <Text>＋</Text>
+                    </TouchableOpacity>
+                    <Text className="mx-3 text-base">{String(timeHour).padStart(2, "0")}</Text>
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeHour((h) => (h - 2 + 12) % 12 + 1)}>
+                      <Text>－</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">Minutes</Text>
+                  <View className="flex-row items-center">
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m + 5) % 60)}>
+                      <Text>＋</Text>
+                    </TouchableOpacity>
+                    <Text className="mx-3 text-base">{String(timeMinute).padStart(2, "0")}</Text>
+                    <TouchableOpacity className="px-2 py-1 rounded bg-gray-100" onPress={() => setTimeMinute((m) => (m - 5 + 60) % 60)}>
+                      <Text>－</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View className="items-center">
+                  <Text className="text-xs text-gray-500 mb-1">AM/PM</Text>
+                  <View className="flex-row">
+                    <TouchableOpacity
+                      className={`px-3 py-2 rounded-l-lg border ${timeAmPm === "AM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
+                      onPress={() => setTimeAmPm("AM")}
+                    >
+                      <Text className={timeAmPm === "AM" ? "text-white" : "text-gray-700"}>AM</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className={`px-3 py-2 rounded-r-lg border ${timeAmPm === "PM" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
+                      onPress={() => setTimeAmPm("PM")}
+                    >
+                      <Text className={timeAmPm === "PM" ? "text-white" : "text-gray-700"}>PM</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+              <View className="flex-row justify-between">
+                <TouchableOpacity
+                  className="px-4 py-3 rounded-lg border border-gray-300"
+                  onPress={() => {
+                    const now = new Date();
+                    let h = now.getHours();
+                    let h12 = h % 12;
+                    if (h12 === 0) h12 = 12;
+                    setTimeHour(h12);
+                    setTimeAmPm(h < 12 ? "AM" : "PM");
+                    setTimeMinute(now.getMinutes() - (now.getMinutes() % 5));
+                  }}
+                >
+                  <Text className="text-gray-700">Now</Text>
+                </TouchableOpacity>
+                <View className="flex-row">
+                  <TouchableOpacity className="mr-2 px-4 py-3 rounded-lg border border-gray-300" onPress={() => setTimeOpen(false)}>
+                    <Text className="text-gray-700">Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity className="px-4 py-3 rounded-lg bg-blue-600" onPress={confirmWebTime}>
+                    <Text className="text-white font-semibold">Set Time</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
