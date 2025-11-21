@@ -416,7 +416,7 @@ export default function FixturesByCategory() {
                       </View>
                     </ScrollView>
 
-                    {isTeamFormat ? (
+                    {isTeamFormat && fixtures.length > 0 ? (
                         <View>
                             {(fixturesByRound[activeRound || 0] || []).map(f => renderFixture(f))}
                         </View>
