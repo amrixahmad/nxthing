@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "rea
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSession } from "@/context/SessionProvider";
+import { formatDateTimeLocal } from "@/src/utils/datetime";
 import { supabase } from "@/lib/supabase";
 
 type RoundRow = { round_number: number; name: string | null };
@@ -392,6 +393,7 @@ export default function FixturesByCategory() {
         fixtures.find((fx) => fx.id === m.fixture_id)?.entry2_id ?? null,
         m.sub_match_type
       );
+      const scheduledLabel = m.scheduled_at ? formatDateTimeLocal(m.scheduled_at) : "";
       return (
           <TouchableOpacity 
             key={m.id} 
@@ -418,6 +420,13 @@ export default function FixturesByCategory() {
              
              <View className="w-1/3 items-center">
                  {statusBadge(m.status)}
+                 {(scheduledLabel || m.court) ? (
+                   <Text className="text-[10px] text-gray-500 mt-1 text-center" numberOfLines={2}>
+                     {scheduledLabel ? scheduledLabel : ""}
+                     {scheduledLabel && m.court ? " · " : ""}
+                     {m.court ? `Court ${m.court}` : ""}
+                   </Text>
+                 ) : null}
              </View>
              
              <View className="w-1/3 pl-1 items-end">
@@ -425,8 +434,7 @@ export default function FixturesByCategory() {
                      {m.entry2_points !== null && (
                          <Text className="font-semibold text-gray-900 mr-1">{m.entry2_points}</Text>
                      )}
-                     {m.court && <Text className="text-[10px] text-gray-400 ml-2">{m.court}</Text>}
-                 </View>
+                  </View>
                  {rightPair ? (
                    <Text className="text-[10px] text-gray-600 mt-0.5" numberOfLines={1}>{rightPair}</Text>
                  ) : null}

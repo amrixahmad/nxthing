@@ -279,6 +279,20 @@ export default function HostMatchDetail() {
           });
           return;
         }
+        if (rawMsg.includes("Scheduling conflict: this team is already in another match at the same time")) {
+          toast.show({
+            type: "error",
+            message: "Scheduling conflict: this team is already in another match at the same time.",
+          });
+          return;
+        }
+        if (rawMsg.includes("Scheduling conflict: one or more players are already in another match at the same time")) {
+          toast.show({
+            type: "error",
+            message: "Scheduling conflict: one or more players are already in another match at the same time.",
+          });
+          return;
+        }
         toast.show({ type: "error", message: rawMsg || "Unable to save match" });
         return;
       }
