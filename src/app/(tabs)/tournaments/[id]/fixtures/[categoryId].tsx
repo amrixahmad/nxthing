@@ -49,6 +49,7 @@ export default function FixturesByCategory() {
   const [activeRound, setActiveRound] = useState<number | null>(null);
   const [entryNames, setEntryNames] = useState<Record<number, string>>({});
   const [rosterByEntry, setRosterByEntry] = useState<Record<number, Record<string, string[]>>>({});
+  const [refereeNames, setRefereeNames] = useState<Record<string, string>>({});
   const [organizerId, setOrganizerId] = useState<string | null>(null);
   const [isTeamFormat, setIsTeamFormat] = useState(false);
   const [activeTab, setActiveTab] = useState<"fixtures" | "leaderboard">("fixtures");
@@ -183,6 +184,22 @@ export default function FixturesByCategory() {
       .eq("id", tid)
       .maybeSingle();
     setOrganizerId((tdata as any)?.organizer_id ?? null);
+
+    // Load referee display names for this tournament
+    const { data: refRows } = await supabase
+      .from("tournament_referees")
+      .select("profile_id, profile:profile_id(id, full_name, username)")
+      .eq("tournament_id", tid);
+    const refMap: Record<string, string> = {};
+    for (const row of (refRows as any[]) || []) {
+      const prof = (row as any).profile as any;
+      const pid = String((row as any).profile_id || "");
+      const fallback = pid ? `Ref ${pid.slice(0, 6)}` : "Referee";
+      const nameRaw = prof?.full_name || prof?.username || fallback;
+      const name = String(nameRaw).trim();
+      if (pid) refMap[pid] = name;
+    }
+    setRefereeNames(refMap);
 
     if (activeRound == null) {
       const first = (r as any[])?.[0]?.round_number ?? null;
@@ -396,6 +413,7 @@ export default function FixturesByCategory() {
         m.sub_match_type
       );
       const scheduledLabel = m.scheduled_at ? formatDateTimeLocal(m.scheduled_at) : "";
+      const refName = m.referee_profile_id ? refereeNames[String(m.referee_profile_id)] : undefined;
       return (
           <TouchableOpacity 
             key={m.id} 
@@ -425,11 +443,13 @@ export default function FixturesByCategory() {
              
              <View className="w-1/3 items-center">
                  {statusBadge(m.status)}
-                 {(scheduledLabel || m.court) ? (
+                 {(scheduledLabel || m.court || refName) ? (
                    <Text className="text-[10px] text-gray-500 mt-1 text-center" numberOfLines={2}>
                      {scheduledLabel ? scheduledLabel : ""}
                      {scheduledLabel && m.court ? " · " : ""}
                      {m.court ? `Court ${m.court}` : ""}
+                     {refName ? ((scheduledLabel || m.court) ? "\n" : "") : ""}
+                     {refName ? `Ref: ${refName}` : ""}
                    </Text>
                  ) : null}
              </View>
@@ -548,6 +568,11 @@ export default function FixturesByCategory() {
                                   <Text className="text-gray-500">vs</Text>
                                   <Text className={`text-base ml-2 ${nameStyleFor(m.entry2_id, m.winner_entry_id, m.status)}`} numberOfLines={1}>{labelEntry(m.entry2_id)}</Text>
                                 </View>
+                                {m.referee_profile_id && refereeNames[String(m.referee_profile_id)] ? (
+                                  <Text className="mt-1 text-xs text-gray-500">
+                                    Ref: {refereeNames[String(m.referee_profile_id)]}
+                                  </Text>
+                                ) : null}
                                 {((organizerId && userId && userId === organizerId) ||
                                   (m.referee_profile_id && userId && userId === m.referee_profile_id)) ? (
                                   <View className="mt-3 self-end">
