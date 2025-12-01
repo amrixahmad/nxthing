@@ -26,6 +26,12 @@ import { toDMY, toHM12, combineDateTime, parseTime12, parseDMY } from "@/src/uti
   session_sequence: number | null;
 };
 
+ type RefOption = {
+  id: string;
+  name: string;
+  email: string | null;
+ };
+
 export default function HostMatchDetail() {
   const params = useLocalSearchParams<{ id: string; matchId: string }>();
   const tid = Number(params.id);
@@ -54,6 +60,10 @@ export default function HostMatchDetail() {
   const [timeHour, setTimeHour] = useState<number>(9);
   const [timeMinute, setTimeMinute] = useState<number>(0);
   const [timeAmPm, setTimeAmPm] = useState<"AM" | "PM">("AM");
+  const [refOptions, setRefOptions] = useState<RefOption[]>([]);
+  const [refereeId, setRefereeId] = useState<string | null>(null);
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [isReferee, setIsReferee] = useState(false);
 
   function shortName(s: string) {
     const str = String(s || "").trim();
@@ -122,7 +132,7 @@ export default function HostMatchDetail() {
       const { data: m } = await supabase
         .from("matches")
         .select(
-          "id,tournament_id,category_id,round_number,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,next_match_id,next_match_slot,fixture_id,sub_match_type,session_sequence"
+          "id,tournament_id,category_id,round_number,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,next_match_id,next_match_slot,fixture_id,sub_match_type,session_sequence,referee_profile_id"
         )
         .eq("id", mid)
         .maybeSingle();
@@ -151,21 +161,45 @@ export default function HostMatchDetail() {
         entry1_id: effectiveEntry1Id,
         entry2_id: effectiveEntry2Id,
       };
-      // Organizer guard
+      // Access guard: allow tournament organizer or assigned referee
       const { data: tOrg } = await supabase
         .from("tournaments")
         .select("id, organizer_id")
         .eq("id", mm.tournament_id)
         .maybeSingle();
       const orgId = (tOrg as any)?.organizer_id as string | null | undefined;
-      if (orgId && session?.user?.id && orgId !== session.user.id) {
+      const uid = session?.user?.id || null;
+      const refId = (mmRaw as any)?.referee_profile_id as string | null | undefined;
+      const isOrg = !!uid && !!orgId && uid === orgId;
+      const isRef = !!uid && !!refId && uid === refId;
+      if (!isOrg && !isRef) {
         router.replace({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(mm.category_id) } } as any);
         setLoading(false);
         return;
       }
+      setIsOrganizer(isOrg);
+      setIsReferee(isRef);
+      const { data: refRows } = await supabase
+        .from("tournament_referees")
+        .select("profile_id, profile:profile_id(id, full_name, username)")
+        .eq("tournament_id", mm.tournament_id)
+        .order("created_at", { ascending: true });
+      const opts: RefOption[] = ((refRows as any[]) || []).map((row: any) => {
+        const prof = row.profile as any;
+        const nameRaw = prof?.full_name || prof?.username || "Unknown user";
+        const name = String(nameRaw || "").trim() || "Unknown user";
+        const email = null;
+        return {
+          id: String(row.profile_id),
+          name,
+          email,
+        };
+      });
+      setRefOptions(opts);
       setMatch(mm);
       setStatus(mm.status);
       setCourt(mm.court || "");
+      setRefereeId((mmRaw as any)?.referee_profile_id || null);
       if (mm.scheduled_at) {
         const dt = new Date(mm.scheduled_at);
         setDateStr(toDMY(dt));
@@ -225,17 +259,22 @@ export default function HostMatchDetail() {
   async function save() {
     try {
       if (!match) return;
-      let scheduledAt: string | null = null;
-      if (dateStr && timeStr) {
-        const dt = combineDateTime(dateStr, timeStr);
-        if (!dt) {
-          Alert.alert("Invalid date/time", "Please use dd/mm/yyyy and h:mm AM/PM");
+      if (!isOrganizer && !isReferee) return;
+
+      // Start from existing schedule; only organizers can modify date/time & court
+      let scheduledAt: string | null = match.scheduled_at;
+      if (isOrganizer) {
+        if (dateStr && timeStr) {
+          const dt = combineDateTime(dateStr, timeStr);
+          if (!dt) {
+            Alert.alert("Invalid date/time", "Please use dd/mm/yyyy and h:mm AM/PM");
+            return;
+          }
+          scheduledAt = dt.toISOString();
+        } else if (dateStr || timeStr) {
+          Alert.alert("Both date and time required", "Set both date and time or clear both");
           return;
         }
-        scheduledAt = dt.toISOString();
-      } else if (dateStr || timeStr) {
-        Alert.alert("Both date and time required", "Set both date and time or clear both");
-        return;
       }
 
       const winnerId = winner === 1 ? match.entry1_id : winner === 2 ? match.entry2_id : null;
@@ -250,21 +289,29 @@ export default function HostMatchDetail() {
         { p1: 0, p2: 0 }
       );
 
-      // If a schedule has been set for a previously pending match, auto-mark it as scheduled
+      // If a schedule has been set for a previously pending match, auto-mark it as scheduled (organizer only)
       let effectiveStatus = status;
-      if (scheduledAt && status === "pending") {
+      if (isOrganizer && scheduledAt && status === "pending") {
         effectiveStatus = "scheduled";
       }
 
-      const updates: any = {
-        status: effectiveStatus,
-        court: court || null,
-        scheduled_at: scheduledAt,
-        winner_entry_id: winnerId,
-        score_json: scorePayload,
-        entry1_points: totals.p1,
-        entry2_points: totals.p2,
-      };
+      const updates: any = {};
+
+      // Status, winner and score can be changed by organizer or assigned referee
+      if (isOrganizer || isReferee) {
+        updates.status = effectiveStatus;
+        updates.winner_entry_id = winnerId;
+        updates.score_json = scorePayload;
+        updates.entry1_points = totals.p1;
+        updates.entry2_points = totals.p2;
+      }
+
+      // Schedule, court and referee assignment are organizer-only
+      if (isOrganizer) {
+        updates.court = court || null;
+        updates.scheduled_at = scheduledAt;
+        updates.referee_profile_id = refereeId;
+      }
 
       const { error: uErr } = await supabase
         .from("matches")
@@ -315,6 +362,12 @@ export default function HostMatchDetail() {
 
   const statuses = useMemo(() => ["pending","scheduled","in_progress","completed","walkover","bye","cancelled"], []);
 
+  const canEditScore = isOrganizer || isReferee;
+  const canEditSchedule = isOrganizer;
+  const canEditReferee = isOrganizer;
+  const canEditStatus = isOrganizer || isReferee;
+  const canSave = canEditScore || canEditSchedule || canEditReferee;
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       <Stack.Screen options={{ title: `Match #${mid}` }} />
@@ -360,6 +413,7 @@ export default function HostMatchDetail() {
                     className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white ml-2"
                     keyboardType="numeric"
                     value={g.p2}
+                    editable={canEditScore}
                     onChangeText={(t) => {
                       const v = t.replace(/[^0-9]/g, "");
                       setGames((arr) => arr.map((it, i) => i === idx ? { ...it, p2: v } : it));
@@ -367,13 +421,21 @@ export default function HostMatchDetail() {
                     placeholder={shortName(p2Name)}
                     placeholderTextColor="#9CA3AF"
                   />
-                  <TouchableOpacity className="ml-2 px-3 py-2 rounded-lg border border-red-300" onPress={() => setGames((arr) => arr.filter((_, i) => i !== idx))}>
+                  <TouchableOpacity
+                    className="ml-2 px-3 py-2 rounded-lg border border-red-300"
+                    disabled={!canEditScore}
+                    onPress={canEditScore ? () => setGames((arr) => arr.filter((_, i) => i !== idx)) : undefined}
+                  >
                     <Text className="text-red-700">Remove</Text>
                   </TouchableOpacity>
                 </View>
               ))}
               <View className="mb-4">
-                <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300 self-start" onPress={() => setGames((arr) => [...arr, { p1: "", p2: "" }])}>
+                <TouchableOpacity
+                  className="px-3 py-2 rounded-lg border border-gray-300 self-start"
+                  disabled={!canEditScore}
+                  onPress={canEditScore ? () => setGames((arr) => [...arr, { p1: "", p2: "" }]) : undefined}
+                >
                   <Text className="text-gray-800">Add Game</Text>
                 </TouchableOpacity>
               </View>
@@ -384,13 +446,25 @@ export default function HostMatchDetail() {
                 <Text className="text-xs text-gray-500">Right</Text>
               </View>
               <View className="flex-row mb-4 mt-1">
-                <TouchableOpacity className={`px-3 py-2 rounded-l-lg border ${winner === 1 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setWinner(1)}>
+                <TouchableOpacity
+                  className={`px-3 py-2 rounded-l-lg border ${winner === 1 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  disabled={!canEditScore}
+                  onPress={canEditScore ? () => setWinner(1) : undefined}
+                >
                   <Text className={winner === 1 ? 'text-white' : 'text-gray-800'} numberOfLines={1}>{shortName(p1Name)}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity className={`px-3 py-2 border ${winner === 0 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setWinner(0)}>
+                <TouchableOpacity
+                  className={`px-3 py-2 border ${winner === 0 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  disabled={!canEditScore}
+                  onPress={canEditScore ? () => setWinner(0) : undefined}
+                >
                   <Text className={winner === 0 ? 'text-white' : 'text-gray-800'}>None</Text>
                 </TouchableOpacity>
-                <TouchableOpacity className={`px-3 py-2 rounded-r-lg border ${winner === 2 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setWinner(2)}>
+                <TouchableOpacity
+                  className={`px-3 py-2 rounded-r-lg border ${winner === 2 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  disabled={!canEditScore}
+                  onPress={canEditScore ? () => setWinner(2) : undefined}
+                >
                   <Text className={winner === 2 ? 'text-white' : 'text-gray-800'} numberOfLines={1}>{shortName(p2Name)}</Text>
                 </TouchableOpacity>
               </View>
@@ -401,7 +475,9 @@ export default function HostMatchDetail() {
                   <Text className="text-sm text-gray-700 mb-1">Date</Text>
                   <TouchableOpacity
                     className="border border-gray-300 rounded-lg p-3 bg-white"
+                    disabled={!canEditSchedule}
                     onPress={() => {
+                      if (!canEditSchedule) return;
                       if (Platform.OS === "web") openCalendarForSchedule();
                       else setShowDatePicker(true);
                     }}
@@ -414,14 +490,20 @@ export default function HostMatchDetail() {
                   <View className="flex-row items-center">
                     <TouchableOpacity
                       className="flex-1 border border-gray-300 rounded-lg p-3 bg-white"
+                      disabled={!canEditSchedule}
                       onPress={() => {
+                        if (!canEditSchedule) return;
                         if (Platform.OS === "web") openWebTimePicker();
                         else setShowTimePicker(true);
                       }}
                     >
                       <Text className={timeStr ? "text-gray-900" : "text-gray-400"}>{timeStr || "Pick time"}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={setNow}>
+                    <TouchableOpacity
+                      className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200"
+                      disabled={!canEditSchedule}
+                      onPress={canEditSchedule ? setNow : undefined}
+                    >
                       <Text className="text-gray-800">Now</Text>
                     </TouchableOpacity>
                   </View>
@@ -463,11 +545,57 @@ export default function HostMatchDetail() {
 
               <View className="mb-4">
                 <Text className="text-base font-semibold text-gray-900 mb-2">Court</Text>
-                <TextInput className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white" value={court} onChangeText={setCourt} placeholder="e.g., 1" placeholderTextColor="#9CA3AF" />
+                <TextInput
+                  className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
+                  value={court}
+                  onChangeText={setCourt}
+                  placeholder="e.g., 1"
+                  placeholderTextColor="#9CA3AF"
+                  editable={canEditSchedule}
+                />
+              </View>
+
+              <View className="mb-4">
+                <Text className="text-base font-semibold text-gray-900 mb-2">Referee</Text>
+                {refOptions.length === 0 ? (
+                  <Text className="text-sm text-gray-600">
+                    No referees added yet. Add referees from the Host Dashboard.
+                  </Text>
+                ) : (
+                  <>
+                    <View className="flex-row flex-wrap -m-1 mb-1">
+                      <TouchableOpacity
+                        className={`m-1 px-3 py-2 rounded-lg border ${!refereeId ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                        disabled={!canEditReferee}
+                        onPress={canEditReferee ? () => setRefereeId(null) : undefined}
+                      >
+                        <Text className={!refereeId ? 'text-white' : 'text-gray-800'}>None</Text>
+                      </TouchableOpacity>
+                      {refOptions.map((r) => {
+                        const selected = refereeId === r.id;
+                        return (
+                          <TouchableOpacity
+                            key={r.id}
+                            className={`m-1 px-3 py-2 rounded-lg border ${selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                            disabled={!canEditReferee}
+                            onPress={canEditReferee ? () => setRefereeId(r.id) : undefined}
+                          >
+                            <Text className={selected ? 'text-white' : 'text-gray-800'} numberOfLines={1}>{r.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <Text className="text-xs text-gray-500">Only one referee can be assigned per match.</Text>
+                  </>
+                )}
               </View>
 
               <View className="flex-row">
-                <TouchableOpacity className="px-4 py-3 rounded-lg bg-blue-600 active:bg-blue-700" onPress={save}>
+                <TouchableOpacity
+                  className="px-4 py-3 rounded-lg bg-blue-600 active:bg-blue-700"
+                  disabled={!canSave}
+                  onPress={canSave ? save : undefined}
+                >
                   <Text className="text-white font-semibold">Save</Text>
                 </TouchableOpacity>
                 <TouchableOpacity className="ml-2 px-4 py-3 rounded-lg border border-gray-300" onPress={() => router.back()}>

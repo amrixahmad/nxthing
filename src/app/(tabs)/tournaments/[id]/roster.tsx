@@ -51,15 +51,15 @@ export default function RosterManagement() {
       if (pids.length > 0) {
         const { data: profiles } = await supabase
           .from("profiles")
-          .select("id, display_name, email")
+          .select("id, full_name, username")
           .in("id", pids);
           
         const combined = (mems || []).map(m => {
            const p = profiles?.find(px => px.id === m.profile_id);
            return {
              profile_id: m.profile_id,
-             display_name: m.display_name || p?.display_name || p?.email || "Unknown Player",
-             email: p?.email
+             display_name: m.display_name || (p as any)?.full_name || (p as any)?.username || "Unknown Player",
+             email: null
            };
         });
         setMembers(combined);

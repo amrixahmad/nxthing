@@ -32,6 +32,7 @@ type MatchRow = {
   score_json: any | null;
   entry1_points: number | null;
   entry2_points: number | null;
+  referee_profile_id: string | null;
 };
 
 export default function FixturesByCategory() {
@@ -39,6 +40,7 @@ export default function FixturesByCategory() {
   const tid = Number(params.id);
   const cid = Number(params.categoryId);
   const { session } = useSession();
+  const userId = session?.user?.id || null;
 
   const [loading, setLoading] = useState(true);
   const [rounds, setRounds] = useState<RoundRow[]>([]);
@@ -69,7 +71,7 @@ export default function FixturesByCategory() {
     // Fetch Matches
     const { data: m } = await supabase
       .from("matches")
-      .select("id,fixture_id,sub_match_type,session_sequence,round_number,index_in_round,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,entry1_points,entry2_points")
+      .select("id,fixture_id,sub_match_type,session_sequence,round_number,index_in_round,entry1_id,entry2_id,winner_entry_id,status,scheduled_at,court,score_json,entry1_points,entry2_points,referee_profile_id")
       .eq("category_id", cid)
       .order("round_number", { ascending: true })
       .order("index_in_round", { ascending: true });
@@ -399,7 +401,10 @@ export default function FixturesByCategory() {
             key={m.id} 
             className="flex-row items-center justify-between py-2 border-b border-gray-50 last:border-0"
             onPress={() => {
-                if (organizerId && session?.user?.id === organizerId) {
+                if (
+                  (organizerId && userId && userId === organizerId) ||
+                  (m.referee_profile_id && userId && userId === m.referee_profile_id)
+                ) {
                      router.push({ pathname: "/tournaments/[id]/matches/[matchId]", params: { id: String(tid), matchId: String(m.id) } } as any);
                 }
             }}
@@ -543,9 +548,18 @@ export default function FixturesByCategory() {
                                   <Text className="text-gray-500">vs</Text>
                                   <Text className={`text-base ml-2 ${nameStyleFor(m.entry2_id, m.winner_entry_id, m.status)}`} numberOfLines={1}>{labelEntry(m.entry2_id)}</Text>
                                 </View>
-                                {organizerId && session?.user?.id === organizerId ? (
+                                {((organizerId && userId && userId === organizerId) ||
+                                  (m.referee_profile_id && userId && userId === m.referee_profile_id)) ? (
                                   <View className="mt-3 self-end">
-                                    <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={() => router.push({ pathname: "/tournaments/[id]/matches/[matchId]", params: { id: String(tid), matchId: String(m.id) } } as any)}>
+                                    <TouchableOpacity
+                                      className="px-3 py-2 rounded-lg border border-gray-300"
+                                      onPress={() =>
+                                        router.push({
+                                          pathname: "/tournaments/[id]/matches/[matchId]",
+                                          params: { id: String(tid), matchId: String(m.id) },
+                                        } as any)
+                                      }
+                                    >
                                       <Text className="text-gray-800">Edit</Text>
                                     </TouchableOpacity>
                                   </View>

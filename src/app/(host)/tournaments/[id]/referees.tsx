@@ -15,8 +15,8 @@ type RefRow = {
   id: number;
   profile_id: string;
   profile?: {
-    display_name: string | null;
-    email: string | null;
+    full_name: string | null;
+    username: string | null;
   } | null;
 };
 
@@ -52,7 +52,7 @@ export default function ManageReferees() {
 
       const { data: rows, error: rErr } = await supabase
         .from("tournament_referees")
-        .select("id, profile_id, profile:profile_id(id, display_name, email)")
+        .select("id, profile_id, profile:profile_id(id, full_name, username)")
         .eq("tournament_id", tid)
         .order("created_at", { ascending: true });
       if (rErr) throw rErr;
@@ -76,20 +76,18 @@ export default function ManageReferees() {
     }
     setSaving(true);
     try {
-      const { data: profs, error: pErr } = await supabase
-        .from("profiles")
-        .select("id, display_name, email")
-        .ilike("email", raw);
-      if (pErr) throw pErr;
-      const prof = (profs || [])[0] as { id: string; display_name: string | null; email: string | null } | undefined;
-      if (!prof) {
+      const { data, error } = await supabase.rpc("resolve_profile_by_email", { p_email: raw });
+      if (error) throw error;
+      const row = (data as any[] | null)?.[0];
+      if (!row) {
         Alert.alert("Not found", "No user found with that email.");
         return;
       }
+      const profileId = row.profile_id as string;
 
       const { error: iErr } = await supabase
         .from("tournament_referees")
-        .insert({ tournament_id: tid, profile_id: prof.id });
+        .insert({ tournament_id: tid, profile_id: profileId });
       if (iErr) {
         const msg = String((iErr as any)?.message || "");
         if (msg.includes("duplicate key value")) {
@@ -125,12 +123,11 @@ export default function ManageReferees() {
 
   function displayNameFor(r: RefRow) {
     const p = r.profile;
-    return p?.display_name || p?.email || "Unknown user";
+    return p?.full_name || p?.username || "Unknown user";
   }
 
   function emailFor(r: RefRow) {
-    const p = r.profile;
-    return p?.email || null;
+    return null;
   }
 
   return (
