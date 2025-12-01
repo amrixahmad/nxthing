@@ -122,6 +122,12 @@ export default function HostTournaments() {
                     <Text className="text-gray-800">Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    className="ml-2 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    onPress={() => router.push({ pathname: "/host/[id]/referees", params: { id: String(t.id) } } as any)}
+                  >
+                    <Text className="text-gray-800">Referees</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     className="ml-2 px-4 py-3 rounded-lg border border-red-300 bg-red-50 active:bg-red-100"
                     onPress={async () => {
                       const confirm = Platform.OS === "web" ? (typeof window !== "undefined" ? window.confirm("Delete this tournament? This cannot be undone.") : true) : undefined;
