@@ -163,146 +163,170 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     if (isTeamFormat) {
-        // --- TEAM FORMAT: Round Robin with Explosion ---
-        const teamIds = [...ids];
-        // Polygon method for Round Robin
-        // If odd number of teams, add a dummy "bye" (null)
-        if (teamIds.length % 2 !== 0) {
-            teamIds.push(null as any);
+        const groupSize = 4;
+        const shuffled = seededShuffle(ids, categoryId);
+        const groups: number[][] = [];
+        for (let i = 0; i < shuffled.length; i += groupSize) {
+          groups.push(shuffled.slice(i, i + groupSize));
         }
-        
-        const n = teamIds.length;
-        const totalRounds = n - 1;
-        const matchesPerRound = n / 2;
-        
-        // Create Rounds records
-        const roundRows = Array.from({ length: totalRounds }, (_, idx) => ({
-            tournament_id: (cat as CategoryRow).tournament_id,
-            category_id: categoryId,
-            round_number: idx + 1,
-            name: `Round ${idx + 1}`,
-        }));
-        
-        const { error: rErr } = await supabase.from("rounds").insert(roundRows);
-        if (rErr) throw rErr;
 
-        // Generate Fixtures
-        const fixturesToInsert: any[] = [];
-        
-        // We use a mutable array for rotation
-        let currentTeams = [...teamIds];
+        const groupRounds: { t1: number | null; t2: number | null }[][] = [];
+        let maxRounds = 0;
 
-        for (let r = 0; r < totalRounds; r++) {
+        for (let g = 0; g < groups.length; g++) {
+          const baseTeams = groups[g];
+          if (baseTeams.length <= 1) {
+            groupRounds[g] = [];
+            continue;
+          }
+
+          const groupTeams: (number | null)[] = [...baseTeams];
+          if (groupTeams.length % 2 !== 0) {
+            groupTeams.push(null);
+          }
+
+          const n = groupTeams.length;
+          const matchesPerRound = n / 2;
+          const roundsForGroup: { t1: number | null; t2: number | null }[][] = [];
+          let currentTeams = [...groupTeams];
+          const totalGroupRounds = n - 1;
+
+          for (let r = 0; r < totalGroupRounds; r++) {
+            const roundPairings: { t1: number | null; t2: number | null }[] = [];
             for (let i = 0; i < matchesPerRound; i++) {
-                const t1 = currentTeams[i];
-                const t2 = currentTeams[n - 1 - i];
-                
-                // If either is null, it's a bye week for the other team. 
-                // We currently don't create fixtures for byes in RR unless requested.
-                // Directive says "system must handle BYE rounds". 
-                // Creating a fixture with status 'bye' might be useful for display.
-                
-                if (t1 !== null && t2 !== null) {
-                    fixturesToInsert.push({
-                        tournament_id: (cat as CategoryRow).tournament_id,
-                        category_id: categoryId,
-                        round_number: r + 1,
-                        entry1_id: t1,
-                        entry2_id: t2,
-                        status: 'scheduled'
-                    });
-                } else if (t1 !== null || t2 !== null) {
-                    // Bye fixture
-                    const teamId = t1 || t2;
-                    fixturesToInsert.push({
-                         tournament_id: (cat as CategoryRow).tournament_id,
-                         category_id: categoryId,
-                         round_number: r + 1,
-                         entry1_id: teamId,
-                         entry2_id: null,
-                         status: 'bye'
-                    });
-                }
+              const t1 = currentTeams[i];
+              const t2 = currentTeams[n - 1 - i];
+              roundPairings.push({ t1, t2 });
             }
-            
-            // Rotate teams: Fixed index 0, others rotate
-            // [0, 1, 2, 3, 4, 5] -> [0, 5, 1, 2, 3, 4]
+
+            roundsForGroup.push(roundPairings);
+
             const fixed = currentTeams[0];
             const rotating = currentTeams.slice(1);
             const last = rotating.pop();
             if (last !== undefined) rotating.unshift(last);
             currentTeams = [fixed, ...rotating];
+          }
+
+          groupRounds[g] = roundsForGroup;
+          if (roundsForGroup.length > maxRounds) {
+            maxRounds = roundsForGroup.length;
+          }
         }
 
-        // Insert fixtures
+        if (maxRounds === 0) {
+          return new Response(JSON.stringify({ error: "Not enough teams to generate fixtures" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const roundRows = Array.from({ length: maxRounds }, (_, idx) => ({
+          tournament_id: (cat as CategoryRow).tournament_id,
+          category_id: categoryId,
+          round_number: idx + 1,
+          name: `Round ${idx + 1}`,
+        }));
+
+        const { error: rErr } = await supabase.from("rounds").insert(roundRows);
+        if (rErr) throw rErr;
+
+        const fixturesToInsert: any[] = [];
+
+        for (let r = 0; r < maxRounds; r++) {
+          for (let g = 0; g < groups.length; g++) {
+            const roundsForGroup = groupRounds[g];
+            if (!roundsForGroup || r >= roundsForGroup.length) continue;
+            const pairings = roundsForGroup[r];
+
+            for (const pairing of pairings) {
+              const { t1, t2 } = pairing;
+
+              if (t1 !== null && t2 !== null) {
+                fixturesToInsert.push({
+                  tournament_id: (cat as CategoryRow).tournament_id,
+                  category_id: categoryId,
+                  round_number: r + 1,
+                  entry1_id: t1,
+                  entry2_id: t2,
+                  status: 'scheduled',
+                });
+              } else if (t1 !== null || t2 !== null) {
+                const teamId = t1 || t2;
+                fixturesToInsert.push({
+                  tournament_id: (cat as CategoryRow).tournament_id,
+                  category_id: categoryId,
+                  round_number: r + 1,
+                  entry1_id: teamId,
+                  entry2_id: null,
+                  status: 'bye',
+                });
+              }
+            }
+          }
+        }
+
         const { data: insertedFixtures, error: fErr } = await supabase
-            .from("fixtures")
-            .insert(fixturesToInsert)
-            .select("id, round_number, status");
-        
+          .from("fixtures")
+          .insert(fixturesToInsert)
+          .select("id, round_number, status");
+
         if (fErr) throw fErr;
 
-        // Explosion: Create 4 sub-matches for each scheduled fixture
         const subMatchesToInsert: any[] = [];
-        
-        // Helper to get index in round for simple enumeration (optional)
         let matchIndexCounter = 0;
 
         for (const fix of (insertedFixtures as any[])) {
-            if (fix.status !== 'scheduled') continue;
+          if (fix.status !== 'scheduled') continue;
 
-            // 1. MD (Session 1)
-            subMatchesToInsert.push({
-                tournament_id: (cat as CategoryRow).tournament_id,
-                category_id: categoryId,
-                round_number: fix.round_number,
-                index_in_round: ++matchIndexCounter,
-                fixture_id: fix.id,
-                sub_match_type: 'MD',
-                session_sequence: 1,
-                status: 'pending'
-            });
-            
-            // 2. WD (Session 1)
-            subMatchesToInsert.push({
-                tournament_id: (cat as CategoryRow).tournament_id,
-                category_id: categoryId,
-                round_number: fix.round_number,
-                index_in_round: ++matchIndexCounter,
-                fixture_id: fix.id,
-                sub_match_type: 'WD',
-                session_sequence: 1,
-                status: 'pending'
-            });
+          subMatchesToInsert.push({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: fix.round_number,
+            index_in_round: ++matchIndexCounter,
+            fixture_id: fix.id,
+            sub_match_type: 'MD',
+            session_sequence: 1,
+            status: 'pending',
+          });
 
-            // 3. XD (Session 2)
-            subMatchesToInsert.push({
-                tournament_id: (cat as CategoryRow).tournament_id,
-                category_id: categoryId,
-                round_number: fix.round_number,
-                index_in_round: ++matchIndexCounter,
-                fixture_id: fix.id,
-                sub_match_type: 'XD',
-                session_sequence: 2,
-                status: 'pending'
-            });
+          subMatchesToInsert.push({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: fix.round_number,
+            index_in_round: ++matchIndexCounter,
+            fixture_id: fix.id,
+            sub_match_type: 'WD',
+            session_sequence: 1,
+            status: 'pending',
+          });
 
-            // 4. RD (Session 2)
-            subMatchesToInsert.push({
-                tournament_id: (cat as CategoryRow).tournament_id,
-                category_id: categoryId,
-                round_number: fix.round_number,
-                index_in_round: ++matchIndexCounter,
-                fixture_id: fix.id,
-                sub_match_type: 'RD',
-                session_sequence: 2,
-                status: 'pending'
-            });
+          subMatchesToInsert.push({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: fix.round_number,
+            index_in_round: ++matchIndexCounter,
+            fixture_id: fix.id,
+            sub_match_type: 'XD',
+            session_sequence: 2,
+            status: 'pending',
+          });
+
+          subMatchesToInsert.push({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: fix.round_number,
+            index_in_round: ++matchIndexCounter,
+            fixture_id: fix.id,
+            sub_match_type: 'RD',
+            session_sequence: 2,
+            status: 'pending',
+          });
         }
 
         if (subMatchesToInsert.length > 0) {
-            const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
-            if (smErr) throw smErr;
+          const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
+          if (smErr) throw smErr;
         }
 
     } else {
