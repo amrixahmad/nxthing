@@ -303,35 +303,84 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const groupRoundNumbers = groupFixtures.map((f) => f.round_number);
     const maxGroupRound = groupRoundNumbers.length > 0 ? Math.max(...groupRoundNumbers) : 0;
-    const knockoutRoundNumber = maxGroupRound + 1;
+    const baseRoundNumber = maxGroupRound + 1;
 
-    let roundName = "Knockout";
-    if (totalQualifiers === 2) roundName = "Final";
-    else if (totalQualifiers === 4) roundName = "Semifinal";
-    else if (totalQualifiers === 8) roundName = "Quarterfinal";
-    else roundName = `Knockout Round of ${totalQualifiers}`;
+    function isPowerOfTwo(x: number): boolean {
+      return x > 0 && (x & (x - 1)) === 0;
+    }
 
-    const roundRow = {
+    type KnockoutRoundMeta = { round_number: number; name: string };
+    const knockoutRounds: KnockoutRoundMeta[] = [];
+
+    if (isPowerOfTwo(totalQualifiers)) {
+      const roundsCount = Math.log2(totalQualifiers) | 0;
+      for (let i = 0; i < roundsCount; i++) {
+        const teamsThisRound = totalQualifiers / Math.pow(2, i);
+        let name = "Knockout";
+        if (teamsThisRound === 2) name = "Final";
+        else if (teamsThisRound === 4) name = "Semifinal";
+        else if (teamsThisRound === 8) name = "Quarterfinal";
+        else name = `Knockout Round of ${teamsThisRound}`;
+        knockoutRounds.push({
+          round_number: baseRoundNumber + i,
+          name,
+        });
+      }
+    } else {
+      let name = "Knockout";
+      if (totalQualifiers === 2) name = "Final";
+      else if (totalQualifiers === 4) name = "Semifinal";
+      else if (totalQualifiers === 8) name = "Quarterfinal";
+      else name = `Knockout Round of ${totalQualifiers}`;
+      knockoutRounds.push({
+        round_number: baseRoundNumber,
+        name,
+      });
+    }
+
+    const roundRows = knockoutRounds.map((r) => ({
       tournament_id: (cat as CategoryRow).tournament_id,
       category_id: categoryId,
-      round_number: knockoutRoundNumber,
-      name: roundName,
-    };
+      round_number: r.round_number,
+      name: r.name,
+    }));
 
-    const { error: rErr } = await supabase.from("rounds").insert(roundRow);
+    const { error: rErr } = await supabase.from("rounds").insert(roundRows);
     if (rErr) throw rErr;
 
     const fixturesToInsert: any[] = [];
+    const firstKnockoutRoundNumber = knockoutRounds[0].round_number;
+
+    // First knockout round uses actual qualified seeds
     for (const p of pairs) {
       fixturesToInsert.push({
         tournament_id: (cat as CategoryRow).tournament_id,
         category_id: categoryId,
-        round_number: knockoutRoundNumber,
+        round_number: firstKnockoutRoundNumber,
         entry1_id: p.t1,
         entry2_id: p.t2,
         status: "scheduled",
         stage: "knockout",
       });
+    }
+
+    // If we have a full power-of-two tree, pre-create later rounds with empty slots
+    if (knockoutRounds.length > 1 && isPowerOfTwo(totalQualifiers)) {
+      for (let i = 1; i < knockoutRounds.length; i++) {
+        const roundMeta = knockoutRounds[i];
+        const matchesThisRound = totalQualifiers / Math.pow(2, i + 1);
+        for (let j = 0; j < matchesThisRound; j++) {
+          fixturesToInsert.push({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: roundMeta.round_number,
+            entry1_id: null,
+            entry2_id: null,
+            status: "pending",
+            stage: "knockout",
+          });
+        }
+      }
     }
 
     const { data: insertedFixtures, error: fErr2 } = await supabase
