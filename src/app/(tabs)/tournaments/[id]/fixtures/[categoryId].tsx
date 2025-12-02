@@ -14,6 +14,7 @@ type FixtureRow = {
   entry1_id: number | null;
   entry2_id: number | null;
   status: string;
+  stage?: string | null;
 };
 
 type MatchRow = {
@@ -83,7 +84,7 @@ export default function FixturesByCategory() {
     if (isTeam) {
       const { data: f } = await supabase
         .from("fixtures")
-        .select("id,round_number,entry1_id,entry2_id,status")
+        .select("id,round_number,entry1_id,entry2_id,status,stage")
         .eq("category_id", cid)
         .order("round_number", { ascending: true });
       fixturesData = (f as any[]) || [];
@@ -248,6 +249,11 @@ export default function FixturesByCategory() {
       return map;
   }, [fixtures]);
 
+  const hasKnockout = useMemo(
+    () => fixtures.some((f) => f.stage === "knockout"),
+    [fixtures]
+  );
+
   // Sub-matches by Fixture
   const matchesByFixture = useMemo(() => {
       const map: Record<number, MatchRow[]> = {};
@@ -277,7 +283,9 @@ export default function FixturesByCategory() {
         byFixture[m.fixture_id].push(m);
       }
 
-      for (const f of fixtures) {
+      const groupFixtures = fixtures.filter((f) => !f.stage || f.stage === "group");
+
+      for (const f of groupFixtures) {
         const t1 = f.entry1_id;
         const t2 = f.entry2_id;
 
@@ -525,6 +533,31 @@ export default function FixturesByCategory() {
     }
   }
 
+  async function generateKnockout() {
+    if (!organizerId || session?.user?.id !== organizerId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("team-knockout", {
+        body: { category_id: cid },
+      });
+
+      if (error) {
+        const payload: any = data as any;
+        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        alert("Error generating knockout: " + serverMsg);
+        return;
+      }
+
+      const msg = ((data as any)?.message as string) || "Knockout stage generated";
+      alert(msg);
+      await load();
+    } catch (e: any) {
+      alert("Error generating knockout: " + (e?.message || String(e)));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-gray-50">
       <Stack.Screen
@@ -632,6 +665,16 @@ export default function FixturesByCategory() {
             
             {activeTab === 'leaderboard' && (
                 <View className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    {organizerId && session?.user?.id === organizerId && !hasKnockout && (
+                      <View className="p-3 border-b border-gray-200">
+                        <TouchableOpacity
+                          onPress={generateKnockout}
+                          className="self-end bg-blue-600 active:bg-blue-700 px-4 py-2 rounded-lg"
+                        >
+                          <Text className="text-white font-semibold text-sm">Generate Knockout Stage</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                     <View className="flex-row bg-gray-50 p-3 border-b border-gray-200">
                         <Text className="w-10 text-xs font-bold text-gray-500">#</Text>
                         <Text className="flex-1 text-xs font-bold text-gray-500">Team</Text>
