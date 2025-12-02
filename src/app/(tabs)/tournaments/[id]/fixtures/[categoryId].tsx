@@ -263,60 +263,94 @@ export default function FixturesByCategory() {
   const leaderboard = useMemo(() => {
       if (!isTeamFormat) return [];
 
-      // Map fixture -> team entries
-      const fixtureTeams: Record<number, { t1: number | null; t2: number | null }> = {};
-      for (const f of fixtures) {
-        fixtureTeams[f.id] = { t1: f.entry1_id, t2: f.entry2_id };
+      // Aggregate at the team fixture level (4 sub-matches per fixture)
+      const stats: Record<
+        number,
+        { id: number; name: string; wins: number; played: number; pointsFor: number; pointsAgainst: number; diff: number }
+      > = {};
+
+      // Index sub-matches by fixture for quick lookup
+      const byFixture: Record<number, MatchRow[]> = {};
+      for (const m of matches) {
+        if (!m.fixture_id) continue;
+        if (!byFixture[m.fixture_id]) byFixture[m.fixture_id] = [];
+        byFixture[m.fixture_id].push(m);
       }
 
-      const points: Record<number, { id: number; name: string; total: number; diff: number }> = {};
+      for (const f of fixtures) {
+        const t1 = f.entry1_id;
+        const t2 = f.entry2_id;
 
-      matches.forEach((m) => {
-        if (!m.fixture_id) return;
-        const fx = fixtureTeams[m.fixture_id];
-        if (!fx) return;
+        // Ignore bye fixtures
+        if (t1 == null || t2 == null) continue;
 
-        const team1 = fx.t1;
-        const team2 = fx.t2;
-        const p1 = m.entry1_points;
-        const p2 = m.entry2_points;
+        const subs = byFixture[f.id] || [];
+        if (subs.length === 0) continue;
 
-        // Only count matches where points have been recorded
-        const hasAnyScore = p1 != null || p2 != null;
-        if (!hasAnyScore) return;
+        let total1 = 0;
+        let total2 = 0;
+        let hasAnyScore = false;
 
-        if (team1 != null) {
-          if (!points[team1]) {
-            points[team1] = {
-              id: team1,
-              name: entryNames[team1] || `Entry #${team1}`,
-              total: 0,
-              diff: 0,
-            };
+        for (const m of subs) {
+          const p1 = m.entry1_points ?? 0;
+          const p2 = m.entry2_points ?? 0;
+          if (m.entry1_points != null || m.entry2_points != null) {
+            hasAnyScore = true;
           }
-          if (p1 != null) {
-            points[team1].total += p1;
-            points[team1].diff += p1 - (p2 || 0);
-          }
+          total1 += p1;
+          total2 += p2;
         }
 
-        if (team2 != null) {
-          if (!points[team2]) {
-            points[team2] = {
-              id: team2,
-              name: entryNames[team2] || `Entry #${team2}`,
-              total: 0,
-              diff: 0,
-            };
-          }
-          if (p2 != null) {
-            points[team2].total += p2;
-            points[team2].diff += p2 - (p1 || 0);
-          }
-        }
-      });
+        // Skip fixtures with no scores at all
+        if (!hasAnyScore) continue;
 
-      return Object.values(points).sort((a, b) => b.total - a.total || b.diff - a.diff);
+        if (!stats[t1]) {
+          stats[t1] = {
+            id: t1,
+            name: entryNames[t1] || `Entry #${t1}`,
+            wins: 0,
+            played: 0,
+            pointsFor: 0,
+            pointsAgainst: 0,
+            diff: 0,
+          };
+        }
+        if (!stats[t2]) {
+          stats[t2] = {
+            id: t2,
+            name: entryNames[t2] || `Entry #${t2}`,
+            wins: 0,
+            played: 0,
+            pointsFor: 0,
+            pointsAgainst: 0,
+            diff: 0,
+          };
+        }
+
+        // Update played & points
+        stats[t1].played += 1;
+        stats[t2].played += 1;
+        stats[t1].pointsFor += total1;
+        stats[t1].pointsAgainst += total2;
+        stats[t2].pointsFor += total2;
+        stats[t2].pointsAgainst += total1;
+        stats[t1].diff = stats[t1].pointsFor - stats[t1].pointsAgainst;
+        stats[t2].diff = stats[t2].pointsFor - stats[t2].pointsAgainst;
+
+        // Result: increment wins based on team-level points in this fixture
+        if (total1 > total2) {
+          stats[t1].wins += 1;
+        } else if (total2 > total1) {
+          stats[t2].wins += 1;
+        }
+      }
+
+      return Object.values(stats).sort(
+        (a, b) =>
+          b.wins - a.wins ||
+          b.pointsFor - a.pointsFor ||
+          b.diff - a.diff
+      );
   }, [matches, fixtures, entryNames, isTeamFormat]);
 
   function labelEntry(id: number | null) {
@@ -601,15 +635,17 @@ export default function FixturesByCategory() {
                     <View className="flex-row bg-gray-50 p-3 border-b border-gray-200">
                         <Text className="w-10 text-xs font-bold text-gray-500">#</Text>
                         <Text className="flex-1 text-xs font-bold text-gray-500">Team</Text>
+                        <Text className="w-10 text-right text-xs font-bold text-gray-500">W</Text>
+                        <Text className="w-16 text-right text-xs font-bold text-gray-500">Pts</Text>
                         <Text className="w-16 text-right text-xs font-bold text-gray-500">Diff</Text>
-                        <Text className="w-16 text-right text-xs font-bold text-gray-500">Points</Text>
                     </View>
-                    {leaderboard.map((team, idx) => (
+                    {leaderboard.map((team: any, idx: number) => (
                         <View key={team.id} className="flex-row p-4 border-b border-gray-100 items-center">
                              <Text className="w-10 font-bold text-gray-700">{idx + 1}</Text>
                              <Text className="flex-1 font-medium text-gray-900">{team.name}</Text>
+                             <Text className="w-10 text-right text-gray-600">{team.wins}</Text>
+                             <Text className="w-16 text-right font-bold text-blue-600">{team.pointsFor}</Text>
                              <Text className="w-16 text-right text-gray-600">{team.diff > 0 ? '+' : ''}{team.diff}</Text>
-                             <Text className="w-16 text-right font-bold text-blue-600">{team.total}</Text>
                         </View>
                     ))}
                     {leaderboard.length === 0 && (
