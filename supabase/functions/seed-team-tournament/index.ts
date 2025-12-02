@@ -12,6 +12,7 @@ type Body = {
   organizer_id?: string;
   teams?: number; // Default 4
   seed_tag?: string;
+  op?: "create" | "cleanup";
 };
 
 function makeSeedTag() {
@@ -33,17 +34,99 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("EXPO_PUBLIC_SUPABASE_URL") || "http://127.0.0.1:54321";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "";
+    if (!serviceKey) {
+      return new Response(
+        JSON.stringify({ error: "SERVICE_ROLE key missing. Set SUPABASE_SERVICE_ROLE_KEY in env." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const body = (await req.json().catch(() => ({}))) as Body;
-    const seedTag = body.seed_tag || makeSeedTag();
-    const numTeams = Math.max(2, Math.min(Number(body.teams || 4), 8));
+    const rawBody = (await req.json().catch(() => ({}))) as Body;
+    const op = (rawBody.op || "create") as "create" | "cleanup";
+    const rawSeed = (rawBody.seed_tag || "").trim();
+    const seedTag = op === "cleanup" ? rawSeed : rawSeed || makeSeedTag();
+
+    if (op === "cleanup") {
+      if (!seedTag) {
+        return new Response(
+          JSON.stringify({ error: "seed_tag required for cleanup" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const { data: tours, error: tErr } = await supabase
+        .from("tournaments")
+        .select("id")
+        .ilike("description", `%seed:${seedTag}%`);
+      if (tErr) throw tErr;
+
+      const tourIds = ((tours as any[]) || []).map((t) => t.id as number);
+
+      if (tourIds.length > 0) {
+        const { error: delErr } = await supabase.from("tournaments").delete().in("id", tourIds);
+        if (delErr) throw delErr;
+      }
+
+      const prefix = `seed-${seedTag}-`;
+      const orgPrefix = `seed-org-${seedTag}`;
+      let deleted = 0;
+      let page = 1;
+      const perPage = 1000;
+
+      while (true) {
+        const { data, error } = await (supabase as any).auth.admin.listUsers({ page, perPage });
+        if (error) throw error;
+        const users: any[] = data?.users || [];
+        if (users.length === 0) break;
+        for (const u of users) {
+          const email: string = u.email || "";
+          if (email.startsWith(prefix) || email.startsWith(`${orgPrefix}@`)) {
+            const { error: duErr } = await (supabase as any).auth.admin.deleteUser(u.id);
+            if (!duErr) deleted++;
+          }
+        }
+        if (users.length < perPage) break;
+        page++;
+      }
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          op: "cleanup",
+          seed_tag: seedTag,
+          deleted_tournaments: tourIds.length,
+          deleted_users: deleted,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const body = rawBody;
+    const requestedTeams = Number(body.teams || 4);
+    const numTeams = Math.max(2, Math.min(requestedTeams, 32));
     const PLAYERS_PER_TEAM = 6;
 
     // 1. Get/Create Organizer
-    let organizer_uuid: string | null = body.organizer_id || null;
+    let organizer_uuid: string | null = null;
     let organizer_email: string | null = null;
-    let organizer_username: string | null = null;
+    let organizer_display_name: string | null = null;
+
+    const organizerId = (body.organizer_id || "").trim();
+    if (organizerId) {
+      const { data: prof, error: pErr } = await supabase
+        .from("profiles")
+        .select("id, full_name, username")
+        .eq("id", organizerId)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      if (prof && (prof as any).id) {
+        organizer_uuid = (prof as any).id as string;
+        const fullName = (prof as any).full_name as string | null;
+        const username = (prof as any).username as string | null;
+        organizer_display_name = fullName || username || null;
+      }
+    }
 
     if (!organizer_uuid) {
       const orgUser = `seed-org-${seedTag}`;
@@ -58,7 +141,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (orgErr) throw orgErr;
       organizer_uuid = createOrg.user.id;
       organizer_email = email;
-      organizer_username = orgUser;
+      organizer_display_name = orgUser;
       await supabase.from("profiles").upsert({ id: organizer_uuid, username: orgUser, full_name: orgUser, updated_at: new Date().toISOString() });
     }
 
@@ -74,7 +157,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const { data: tIns, error: tErr } = await supabase.from("tournaments").insert({
       organizer_id: organizer_uuid,
-      organizer_display_name: organizer_username || "Organizer",
+      organizer_display_name: organizer_display_name || "Organizer",
       title,
       description: `seed:${seedTag} - Team Format Test`,
       venue_name: body.venue || "Dev Court 1",
@@ -87,6 +170,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }).select("id").single();
     if (tErr) throw tErr;
     const tournamentId = tIns.id;
+    const titleWithId = `${title} (#${tournamentId})`;
+    const { error: tUpdErr } = await supabase
+      .from("tournaments")
+      .update({ title: titleWithId })
+      .eq("id", tournamentId);
+    if (tUpdErr) throw tUpdErr;
 
     // 3. Create Category (Team)
     const { data: cIns, error: cErr } = await supabase.from("tournament_categories").insert({
@@ -188,9 +277,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
         ok: true,
         tournament_id: tournamentId,
         category_id: categoryId,
+        tournament_title: titleWithId,
         seed_tag: seedTag,
         organizer_email: organizer_email,
-        organizer_password: "Password!123",
+        organizer_password: organizer_email ? "Password!123" : null,
+        used_existing_organizer: organizer_email === null,
+        requested_teams: requestedTeams,
+        actual_teams: numTeams,
+        max_teams_cap: 32,
         entries_created: createdEntries.length,
         message: "Tournament seeded with teams and full rosters. Ready to generate bracket."
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });

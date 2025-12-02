@@ -54,6 +54,7 @@ export default function FixturesByCategory() {
   const [organizerId, setOrganizerId] = useState<string | null>(null);
   const [isTeamFormat, setIsTeamFormat] = useState(false);
   const [activeTab, setActiveTab] = useState<"fixtures" | "leaderboard">("fixtures");
+  const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -264,6 +265,92 @@ export default function FixturesByCategory() {
       }
       return map;
   }, [matches]);
+
+  // Infer groups for team formats based on group-stage fixtures (same idea as team-knockout)
+  const groupInfo = useMemo(() => {
+      if (!isTeamFormat) return { groups: [] as number[][], entryToGroup: {} as Record<number, number> };
+
+      const groupStageFixtures = fixtures.filter((f) => !f.stage || f.stage === "group");
+      const neighbors: Record<number, Set<number>> = {};
+      const teamIdsSet = new Set<number>();
+
+      for (const f of groupStageFixtures) {
+          const e1 = f.entry1_id;
+          const e2 = f.entry2_id;
+          if (e1 != null) {
+              teamIdsSet.add(e1);
+              if (!neighbors[e1]) neighbors[e1] = new Set();
+          }
+          if (e2 != null) {
+              teamIdsSet.add(e2);
+              if (!neighbors[e2]) neighbors[e2] = new Set();
+          }
+          if (e1 != null && e2 != null) {
+              neighbors[e1].add(e2);
+              neighbors[e2].add(e1);
+          }
+      }
+
+      const visited = new Set<number>();
+      const groups: number[][] = [];
+      const entryToGroup: Record<number, number> = {};
+
+      for (const id of teamIdsSet) {
+          if (visited.has(id)) continue;
+          const queue: number[] = [id];
+          visited.add(id);
+          const group: number[] = [];
+          while (queue.length > 0) {
+              const cur = queue.shift() as number;
+              group.push(cur);
+              const neigh = neighbors[cur];
+              if (neigh) {
+                  for (const n of neigh) {
+                      if (!visited.has(n)) {
+                          visited.add(n);
+                          queue.push(n);
+                      }
+                  }
+              }
+          }
+          const idx = groups.length;
+          groups.push(group);
+          for (const eid of group) {
+              entryToGroup[eid] = idx;
+          }
+      }
+
+      return { groups, entryToGroup };
+  }, [fixtures, isTeamFormat]);
+
+  const fixturesByGroup = useMemo(() => {
+      const map: Record<number, FixtureRow[]> = {};
+      if (!isTeamFormat) return map;
+      const { entryToGroup } = groupInfo;
+      for (const f of fixtures) {
+          if (f.stage === "knockout") continue;
+          const e = f.entry1_id ?? f.entry2_id;
+          if (e == null) continue;
+          const gi = entryToGroup[e];
+          if (gi === undefined) continue;
+          if (!map[gi]) map[gi] = [];
+          map[gi].push(f);
+      }
+      return map;
+  }, [fixtures, isTeamFormat, groupInfo]);
+
+  const groupLabels = useMemo(
+      () => groupInfo.groups.map((_g, idx) => ({ index: idx, label: `Group ${idx + 1}` })),
+      [groupInfo]
+  );
+
+  const visibleGroups = useMemo(
+      () =>
+        activeGroupIndex == null
+          ? groupLabels
+          : groupLabels.filter((g) => g.index === activeGroupIndex),
+      [groupLabels, activeGroupIndex]
+  );
 
   // Leaderboard Calculation
   const leaderboard = useMemo(() => {
@@ -633,15 +720,54 @@ export default function FixturesByCategory() {
           <>
             {activeTab === 'fixtures' && (
                 <>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
-                      <View className="flex-row">
-                        {roundsSorted.map((r) => (
-                          <TouchableOpacity key={r.round_number} className={`mr-2 px-3 py-2 rounded-lg border ${activeRound === r.round_number ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setActiveRound(r.round_number)}>
-                            <Text className={activeRound === r.round_number ? 'text-white text-sm' : 'text-gray-800 text-sm'}>{r.name || `Round ${r.round_number}`}</Text>
+                    {!isTeamFormat && (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+                        <View className="flex-row">
+                          {roundsSorted.map((r) => (
+                            <TouchableOpacity
+                              key={r.round_number}
+                              className={`mr-2 px-3 py-2 rounded-lg border ${activeRound === r.round_number ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                              onPress={() => setActiveRound(r.round_number)}
+                            >
+                              <Text className={activeRound === r.round_number ? 'text-white text-sm' : 'text-gray-800 text-sm'}>
+                                {r.name || `Round ${r.round_number}`}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    )}
+
+                    {isTeamFormat && groupLabels.length > 0 && (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+                        <View className="flex-row">
+                          <TouchableOpacity
+                            key="all-groups"
+                            className={`mr-2 px-3 py-2 rounded-lg border ${
+                              activeGroupIndex === null ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                            }`}
+                            onPress={() => setActiveGroupIndex(null)}
+                          >
+                            <Text className={activeGroupIndex === null ? 'text-white text-sm' : 'text-gray-800 text-sm'}>
+                              All Groups
+                            </Text>
                           </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
+                          {groupLabels.map((g) => (
+                            <TouchableOpacity
+                              key={g.index}
+                              className={`mr-2 px-3 py-2 rounded-lg border ${
+                                activeGroupIndex === g.index ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                              }`}
+                              onPress={() => setActiveGroupIndex(g.index)}
+                            >
+                              <Text className={activeGroupIndex === g.index ? 'text-white text-sm' : 'text-gray-800 text-sm'}>
+                                {g.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    )}
 
                     {isTeamFormat && hasKnockout && organizerId && session?.user?.id === organizerId && (
                       <View className="mb-3 items-end">
@@ -656,7 +782,15 @@ export default function FixturesByCategory() {
 
                     {isTeamFormat && fixtures.length > 0 ? (
                         <View>
-                            {(fixturesByRound[activeRound || 0] || []).map(f => renderFixture(f))}
+                          {visibleGroups.map((g) => (
+                            <View key={g.index} className="mb-4">
+                              <Text className="text-xs font-semibold text-gray-500 mb-2">{g.label}</Text>
+                              {(fixturesByGroup[g.index] || []).map((f) => renderFixture(f))}
+                              {(fixturesByGroup[g.index] || []).length === 0 && (
+                                <Text className="text-xs text-gray-400 italic">No fixtures for this group.</Text>
+                              )}
+                            </View>
+                          ))}
                         </View>
                     ) : (
                         <View>
