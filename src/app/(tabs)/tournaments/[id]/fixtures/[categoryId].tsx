@@ -533,6 +533,31 @@ export default function FixturesByCategory() {
     }
   }
 
+  async function updateKnockoutBracket() {
+    if (!organizerId || session?.user?.id !== organizerId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("team-ko-advance", {
+        body: { category_id: cid },
+      });
+
+      if (error) {
+        const payload: any = data as any;
+        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        alert("Error updating knockout: " + serverMsg);
+        return;
+      }
+
+      const msg = ((data as any)?.message as string) || "Knockout bracket updated";
+      alert(msg);
+      await load();
+    } catch (e: any) {
+      alert("Error updating knockout: " + (e?.message || String(e)));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function generateKnockout() {
     if (!organizerId || session?.user?.id !== organizerId) return;
     setLoading(true);
@@ -617,6 +642,17 @@ export default function FixturesByCategory() {
                         ))}
                       </View>
                     </ScrollView>
+
+                    {isTeamFormat && hasKnockout && organizerId && session?.user?.id === organizerId && (
+                      <View className="mb-3 items-end">
+                        <TouchableOpacity
+                          onPress={updateKnockoutBracket}
+                          className="bg-blue-600 active:bg-blue-700 px-4 py-2 rounded-lg"
+                        >
+                          <Text className="text-white font-semibold text-sm">Update Knockout Bracket</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
 
                     {isTeamFormat && fixtures.length > 0 ? (
                         <View>
