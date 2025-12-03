@@ -44,6 +44,9 @@ export default function Account() {
   /** User's display username */
   const [username, setUsername] = useState("");
 
+  /** User's full display name */
+  const [fullName, setFullName] = useState("");
+
   /** User's website URL */
   const [website, setWebsite] = useState("");
 
@@ -51,6 +54,9 @@ export default function Account() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [duprId, setDuprId] = useState("");
   const [duprRating, setDuprRating] = useState("");
+  const [gender, setGender] = useState("");
+  const [paddleBrand, setPaddleBrand] = useState("");
+  const [address, setAddress] = useState("");
   const [notice, setNotice] = useState<"success" | "error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
 
@@ -74,7 +80,7 @@ export default function Account() {
 
       const { data, error, status } = await supabase
         .from("profiles")
-        .select(`username, website, avatar_url, dupr_id, dupr_rating`)
+        .select(`username, full_name, website, avatar_url, dupr_id, dupr_rating, gender, paddle_brand, address`)
         .eq("id", session?.user.id)
         .single();
 
@@ -84,6 +90,7 @@ export default function Account() {
 
       if (data) {
         setUsername(data.username || "");
+        setFullName((data as any).full_name || "");
         setWebsite(data.website || "");
         setAvatarUrl(data.avatar_url || "");
         setDuprId((data as any).dupr_id || "");
@@ -92,6 +99,9 @@ export default function Account() {
             ? String((data as any).dupr_rating)
             : ""
         );
+        setGender((data as any).gender || "");
+        setPaddleBrand((data as any).paddle_brand || "");
+        setAddress((data as any).address || "");
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -116,16 +126,24 @@ export default function Account() {
    */
   async function updateProfile({
     username,
+    full_name,
     website,
     avatar_url,
     dupr_id,
     dupr_rating,
+    gender,
+    paddle_brand,
+    address,
   }: {
     username: string;
+    full_name: string;
     website: string;
     avatar_url: string;
     dupr_id: string | null;
     dupr_rating: number | null;
+    gender: string;
+    paddle_brand: string;
+    address: string;
   }) {
     try {
       setUpdating(true);
@@ -134,10 +152,14 @@ export default function Account() {
       const updates = {
         id: session.user.id,
         username,
+        full_name,
         website,
         avatar_url,
         dupr_id,
         dupr_rating,
+        gender,
+        paddle_brand,
+        address,
         updated_at: new Date().toISOString(),
       };
 
@@ -239,6 +261,20 @@ export default function Account() {
             />
           </View>
 
+          {/* Full Name Field */}
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Full Name
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Enter your full name"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
           {/* Website Field */}
           <View className="mb-6">
             <Text className="text-base font-medium text-gray-700 mb-2">
@@ -251,6 +287,21 @@ export default function Account() {
               placeholder="https://yourwebsite.com"
               placeholderTextColor="#9CA3AF"
               keyboardType="url"
+              autoCapitalize="none"
+            />
+          </View>
+
+          {/* Avatar URL Field */}
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Avatar Image URL
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={avatarUrl}
+              onChangeText={setAvatarUrl}
+              placeholder="https://example.com/avatar.png"
+              placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
             />
           </View>
@@ -286,6 +337,49 @@ export default function Account() {
             />
           </View>
 
+          {/* Gender Field */}
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Gender
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={gender}
+              onChangeText={setGender}
+              placeholder="Optional"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          {/* Paddle Brand Field */}
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Paddle Brand
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={paddleBrand}
+              onChangeText={setPaddleBrand}
+              placeholder="What paddle do you use?"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          {/* Address Field */}
+          <View className="mb-6">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Address
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={address}
+              onChangeText={setAddress}
+              placeholder="City, state, or full address"
+              placeholderTextColor="#9CA3AF"
+              multiline
+            />
+          </View>
+
           {/* Update Button */}
           <TouchableOpacity
             className={`rounded-lg py-4 px-6 ${
@@ -294,10 +388,14 @@ export default function Account() {
             onPress={() =>
               updateProfile({
                 username,
+                full_name: fullName,
                 website,
                 avatar_url: avatarUrl,
                 dupr_id: duprId || null,
                 dupr_rating: duprRating ? Number(duprRating) : null,
+                gender,
+                paddle_brand: paddleBrand,
+                address,
               })
             }
             disabled={updating}

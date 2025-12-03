@@ -22,6 +22,39 @@ import * as Linking from "expo-linking";
 import { supabase } from "../../../lib/supabase";
 import { Stack, router } from "expo-router";
 
+function generateFunPickleName(): string {
+  const adjectives = [
+    "Spicy",
+    "Spinny",
+    "Power",
+    "Kitchen",
+    "Dinking",
+    "Smashing",
+  ];
+  const nouns = [
+    "Pickler",
+    "Dinker",
+    "Smasher",
+    "Baseliner",
+    "Ace",
+    "Rally",
+  ];
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const number = Math.floor(1 + Math.random() * 99);
+  return `${adjective} ${noun} ${number}`;
+}
+
+function deriveUsernameFromEmail(email: string, userId: string): string {
+  const atIndex = email.indexOf("@");
+  const base = (atIndex > 0 ? email.slice(0, atIndex) : email)
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .slice(0, 20)
+    .toLowerCase();
+  const suffix = userId.replace(/-/g, "").slice(0, 6);
+  return `${base}_${suffix}`;
+}
+
 /**
  * Authentication component with sign in and sign up functionality
  * Provides a professional card-based layout with form validation
@@ -86,6 +119,40 @@ export default function Auth() {
     setLoading(false);
   }
 
+  async function handleOAuthSignIn(provider: "google" | "apple") {
+    try {
+      setLoading(true);
+      setNotice(null);
+      const funFullName = generateFunPickleName();
+
+      let redirectTo: string | undefined;
+      try {
+        if (Platform.OS === "web") {
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          redirectTo = `${origin}/auth-callback`;
+        } else {
+          redirectTo = "myapp://auth-callback";
+        }
+      } catch {}
+
+      const { error } = await (supabase.auth as any).signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          data: {
+            full_name: funFullName,
+          },
+        },
+      });
+
+      if (error) {
+        Alert.alert("Authentication Error", error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   /**
    * Handles user sign up with email and password
    * Validates input fields including password length requirements
@@ -108,12 +175,25 @@ export default function Auth() {
     setLoading(true);
     // For native apps, send a magic-link redirect that opens back into the app via our scheme
     let opts: any = {};
+    const funFullName = generateFunPickleName();
     try {
       if (Platform.OS !== "web") {
         const redirect = "myapp://auth-callback";
         opts = { options: { emailRedirectTo: redirect } };
       }
     } catch {}
+
+    opts = {
+      ...(opts || {}),
+      options: {
+        ...(opts.options || {}),
+        data: {
+          ...(opts.options?.data || {}),
+          full_name: funFullName,
+        },
+      },
+    };
+
     const { error } = await supabase.auth.signUp({ email, password, ...(opts || {}) });
 
     if (error) {
@@ -123,8 +203,11 @@ export default function Auth() {
         const { data: userData } = await supabase.auth.getUser();
         const user = userData?.user;
         if (user) {
+          const username = deriveUsernameFromEmail(user.email ?? email, user.id);
           const updates = {
             id: user.id,
+            username,
+            full_name: funFullName,
             dupr_id: duprId || null,
             dupr_rating: duprRating ? Number(duprRating) : null,
             updated_at: new Date().toISOString(),
@@ -169,6 +252,34 @@ export default function Auth() {
             {!isSignUp && notice ? (
               <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
             ) : null}
+
+            {isSignUp && (
+              <>
+                <TouchableOpacity
+                  className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
+                  onPress={() => handleOAuthSignIn("google")}
+                  disabled={loading}
+                >
+                  <Text className="text-gray-800 font-medium">Continue with Google</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
+                  onPress={() => handleOAuthSignIn("apple")}
+                  disabled={loading}
+                >
+                  <Text className="text-gray-800 font-medium">Continue with Apple</Text>
+                </TouchableOpacity>
+
+                <View className="flex-row items-center my-4">
+                  <View className="flex-1 h-px bg-gray-200" />
+                  <Text className="mx-3 text-gray-400 text-xs uppercase">
+                    Or continue with email
+                  </Text>
+                  <View className="flex-1 h-px bg-gray-200" />
+                </View>
+              </>
+            )}
 
             {/* Email Input */}
             <View className="mb-4">
