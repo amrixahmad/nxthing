@@ -7,9 +7,11 @@
  * @version 1.0.0
  */
 
+import { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { useSession } from "@/context/SessionProvider";
 import { Link, router } from "expo-router";
+import { supabase } from "@/lib/supabase";
 
 /**
  * Home screen component - main dashboard of the application
@@ -24,6 +26,35 @@ import { Link, router } from "expo-router";
  */
 export default function HomeScreen() {
   const { session, loading } = useSession();
+  const [displayName, setDisplayName] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadProfileName() {
+      if (!session?.user) return;
+      try {
+        const { data, error, status } = await supabase
+          .from("profiles")
+          .select("full_name, username")
+          .eq("id", session.user.id)
+          .single();
+
+        if (error && status !== 406) {
+          throw error;
+        }
+
+        if (data) {
+          const name =
+            (data as any).full_name ||
+            (data as any).username ||
+            session.user.email?.split("@")[0] ||
+            null;
+          setDisplayName(name);
+        }
+      } catch {}
+    }
+
+    loadProfileName();
+  }, [session]);
 
   // Show loading state while session is being determined
   if (loading) {
@@ -36,7 +67,8 @@ export default function HomeScreen() {
 
   // Extract user information from session
   const userEmail = session?.user?.email;
-  const userName = userEmail?.split("@")[0] || "User";
+  const fallbackName = userEmail?.split("@")[0] || "User";
+  const userName = displayName || fallbackName;
 
   return (
     <ScrollView className="flex-1 bg-gray-50">

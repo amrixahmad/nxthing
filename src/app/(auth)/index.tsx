@@ -253,33 +253,31 @@ export default function Auth() {
               <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
             ) : null}
 
-            {isSignUp && (
-              <>
-                <TouchableOpacity
-                  className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
-                  onPress={() => handleOAuthSignIn("google")}
-                  disabled={loading}
-                >
-                  <Text className="text-gray-800 font-medium">Continue with Google</Text>
-                </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
+                onPress={() => handleOAuthSignIn("google")}
+                disabled={loading}
+              >
+                <Text className="text-gray-800 font-medium">Continue with Google</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
-                  onPress={() => handleOAuthSignIn("apple")}
-                  disabled={loading}
-                >
-                  <Text className="text-gray-800 font-medium">Continue with Apple</Text>
-                </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
+                onPress={() => handleOAuthSignIn("apple")}
+                disabled={loading}
+              >
+                <Text className="text-gray-800 font-medium">Continue with Apple</Text>
+              </TouchableOpacity>
 
-                <View className="flex-row items-center my-4">
-                  <View className="flex-1 h-px bg-gray-200" />
-                  <Text className="mx-3 text-gray-400 text-xs uppercase">
-                    Or continue with email
-                  </Text>
-                  <View className="flex-1 h-px bg-gray-200" />
-                </View>
-              </>
-            )}
+              <View className="flex-row items-center my-4">
+                <View className="flex-1 h-px bg-gray-200" />
+                <Text className="mx-3 text-gray-400 text-xs uppercase">
+                  {isSignUp ? "Or continue with email" : "Or sign in with email"}
+                </Text>
+                <View className="flex-1 h-px bg-gray-200" />
+              </View>
+            </>
 
             {/* Email Input */}
             <View className="mb-4">
