@@ -21,6 +21,17 @@ function makeSeedTag() {
   return `${ts}-${rand}`;
 }
 
+function indexToLetters(idx: number): string {
+  let n = idx;
+  let label = "";
+  while (n >= 0) {
+    const rem = n % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor(n / 26) - 1;
+  }
+  return label;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   try {
     if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -146,7 +157,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // 2. Create Tournament
-    const title = body.title || `Team Championship ${seedTag}`;
+    const baseTitle = body.title || "Team Championship";
+    const title = seedTag ? `${baseTitle} [${seedTag}]` : baseTitle;
     const now = new Date();
     // For dev seeding, we want registration already closed so brackets can be generated immediately.
     // Tournament dates can be in the future, but registration_end_date must be in the past.
@@ -170,12 +182,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }).select("id").single();
     if (tErr) throw tErr;
     const tournamentId = tIns.id;
-    const titleWithId = `${title} (#${tournamentId})`;
-    const { error: tUpdErr } = await supabase
-      .from("tournaments")
-      .update({ title: titleWithId })
-      .eq("id", tournamentId);
-    if (tUpdErr) throw tUpdErr;
 
     // 3. Create Category (Team)
     const { data: cIns, error: cErr } = await supabase.from("tournament_categories").insert({
@@ -194,7 +200,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const createdEntries = [];
     
     for (let t = 0; t < numTeams; t++) {
-        const teamName = `Team ${String.fromCharCode(65 + t)}`; // Team A, B, C...
+        const teamName = `Team ${indexToLetters(t)}`;
         const teamPrefix = `seed-${seedTag}-t${t}`;
         
         // Create Captain (Entry Creator)
@@ -277,7 +283,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         ok: true,
         tournament_id: tournamentId,
         category_id: categoryId,
-        tournament_title: titleWithId,
+        tournament_title: title,
         seed_tag: seedTag,
         organizer_email: organizer_email,
         organizer_password: organizer_email ? "Password!123" : null,

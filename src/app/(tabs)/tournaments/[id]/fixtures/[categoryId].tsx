@@ -55,6 +55,16 @@ export default function FixturesByCategory() {
   const [isTeamFormat, setIsTeamFormat] = useState(false);
   const [activeTab, setActiveTab] = useState<"fixtures" | "leaderboard">("fixtures");
   const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null);
+  const TEAM_COLOR_CLASSES = [
+    "bg-rose-200",
+    "bg-amber-200",
+    "bg-emerald-200",
+    "bg-sky-200",
+    "bg-indigo-200",
+    "bg-purple-200",
+    "bg-pink-200",
+    "bg-teal-200",
+  ];
 
   async function load() {
     setLoading(true);
@@ -352,6 +362,17 @@ export default function FixturesByCategory() {
       [groupLabels, activeGroupIndex]
   );
 
+  const knockoutFixturesByRound = useMemo(() => {
+      const map: Record<number, FixtureRow[]> = {};
+      if (!isTeamFormat) return map;
+      for (const f of fixtures) {
+          if (f.stage !== "knockout") continue;
+          if (!map[f.round_number]) map[f.round_number] = [];
+          map[f.round_number].push(f);
+      }
+      return map;
+  }, [fixtures, isTeamFormat]);
+
   // Leaderboard Calculation
   const leaderboard = useMemo(() => {
       if (!isTeamFormat) return [];
@@ -454,6 +475,12 @@ export default function FixturesByCategory() {
     return name ? name : `Entry #${id}`;
   }
 
+  function teamColorClass(id: number | null): string {
+    if (!id) return "bg-gray-300";
+    const idx = Math.abs(id) % TEAM_COLOR_CLASSES.length;
+    return TEAM_COLOR_CLASSES[idx] || "bg-gray-300";
+  }
+
   function statusBadge(s: string) {
     const cls =
       s === 'bye'
@@ -506,12 +533,16 @@ export default function FixturesByCategory() {
       return (
           <View key={f.id} className="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 overflow-hidden">
               <View className="p-4 bg-gray-50 border-b border-gray-100 flex-row justify-between items-center">
-                  <View className="flex-1">
-                      <Text className="font-bold text-gray-900 text-base">{labelEntry(f.entry1_id)}</Text>
+                  <View className="flex-1 flex-row items-center">
+                      <View className={`px-2 py-1 rounded-full ${teamColorClass(f.entry1_id)}`}>
+                          <Text className="font-bold text-gray-900 text-xs">{labelEntry(f.entry1_id)}</Text>
+                      </View>
                   </View>
                   <Text className="px-3 text-gray-500 font-semibold">VS</Text>
-                  <View className="flex-1 items-end">
-                       <Text className="font-bold text-gray-900 text-base">{labelEntry(f.entry2_id)}</Text>
+                  <View className="flex-1 flex-row items-center justify-end">
+                      <View className={`px-2 py-1 rounded-full ${teamColorClass(f.entry2_id)}`}>
+                          <Text className="font-bold text-gray-900 text-xs">{labelEntry(f.entry2_id)}</Text>
+                      </View>
                   </View>
               </View>
               
@@ -620,6 +651,106 @@ export default function FixturesByCategory() {
     }
   }
 
+  async function simulateKnockoutRound() {
+    if (!organizerId || session?.user?.id !== organizerId) return;
+    setLoading(true);
+    try {
+      const koFixtures = fixtures.filter((f) => f.stage === "knockout");
+      if (koFixtures.length === 0) {
+        alert("No knockout fixtures to simulate.");
+        setLoading(false);
+        return;
+      }
+
+      const roundNumbers = Array.from(new Set(koFixtures.map((f) => f.round_number))).sort(
+        (a, b) => a - b
+      );
+
+      let currentRound: number | null = null;
+      for (const rn of roundNumbers) {
+        const roundFixtures = koFixtures.filter((f) => f.round_number === rn);
+        const hasAnyEntry = roundFixtures.some(
+          (f) => f.entry1_id != null && f.entry2_id != null
+        );
+        const hasPending = roundFixtures.some((f) => {
+          const subs = matchesByFixture[f.id] || [];
+          return subs.some(
+            (m) =>
+              m.status !== "completed" ||
+              (m.entry1_points == null && m.entry2_points == null)
+          );
+        });
+        if (hasAnyEntry && hasPending) {
+          currentRound = rn;
+          break;
+        }
+      }
+
+      if (currentRound == null) {
+        alert("All knockout rounds already have scores.");
+        setLoading(false);
+        return;
+      }
+
+      const fixturesThisRound = koFixtures.filter(
+        (f) => f.round_number === currentRound
+      );
+
+      for (const f of fixturesThisRound) {
+        if (f.entry1_id == null || f.entry2_id == null) continue;
+        const subs = matchesByFixture[f.id] || [];
+        for (const m of subs) {
+          const base1 = 15 + Math.floor(Math.random() * 8);
+          const base2 = 15 + Math.floor(Math.random() * 8);
+          let p1 = base1;
+          let p2 = base2;
+          if (p1 === p2) {
+            if (Math.random() < 0.5) p1++;
+            else p2++;
+          }
+          let winner: number | null = null;
+          if (p1 > p2 && m.entry1_id != null) winner = m.entry1_id;
+          else if (p2 > p1 && m.entry2_id != null) winner = m.entry2_id;
+
+          const { error } = await supabase
+            .from("matches")
+            .update({
+              entry1_points: p1,
+              entry2_points: p2,
+              winner_entry_id: winner,
+              status: "completed",
+            })
+            .eq("id", m.id);
+          if (error) {
+            console.warn("Error simulating KO match", m.id, error.message);
+          }
+        }
+      }
+
+      // Advance winners into the next knockout round (if any)
+      const { data, error: advError } = await supabase.functions.invoke(
+        "team-ko-advance",
+        {
+          body: { category_id: cid },
+        }
+      );
+      if (advError) {
+        const payload: any = data as any;
+        const serverMsg =
+          (payload && (payload.error || payload.message)) ||
+          advError.message ||
+          "Edge Function returned an error";
+        alert("Error updating knockout: " + serverMsg);
+      }
+
+      await load();
+    } catch (e: any) {
+      alert("Error simulating knockout: " + (e?.message || String(e)));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function updateKnockoutBracket() {
     if (!organizerId || session?.user?.id !== organizerId) return;
     setLoading(true);
@@ -665,6 +796,50 @@ export default function FixturesByCategory() {
       await load();
     } catch (e: any) {
       alert("Error generating knockout: " + (e?.message || String(e)));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function simulateGroupStage() {
+    if (!organizerId || session?.user?.id !== organizerId) return;
+    setLoading(true);
+    try {
+      const groupFixtures = fixtures.filter((f) => !f.stage || f.stage === "group");
+      const groupFixtureIds = new Set<number>(groupFixtures.map((f) => f.id));
+      const matchesToUpdate = matches.filter(
+        (m) => m.fixture_id != null && groupFixtureIds.has(m.fixture_id)
+      );
+
+      for (const m of matchesToUpdate) {
+        const base1 = 15 + Math.floor(Math.random() * 8);
+        const base2 = 15 + Math.floor(Math.random() * 8);
+        let p1 = base1;
+        let p2 = base2;
+        if (p1 === p2) {
+          if (Math.random() < 0.5) p1++; else p2++;
+        }
+        let winner: number | null = null;
+        if (p1 > p2 && m.entry1_id != null) winner = m.entry1_id;
+        else if (p2 > p1 && m.entry2_id != null) winner = m.entry2_id;
+
+        const { error } = await supabase
+          .from("matches")
+          .update({
+            entry1_points: p1,
+            entry2_points: p2,
+            winner_entry_id: winner,
+            status: "completed",
+          })
+          .eq("id", m.id);
+        if (error) {
+          console.warn("Error simulating match", m.id, error.message);
+        }
+      }
+
+      await load();
+    } catch (e: any) {
+      alert("Error simulating group stage: " + (e?.message || String(e)));
     } finally {
       setLoading(false);
     }
@@ -738,7 +913,7 @@ export default function FixturesByCategory() {
                       </ScrollView>
                     )}
 
-                    {isTeamFormat && groupLabels.length > 0 && (
+                    {isTeamFormat && groupLabels.length > 0 && !hasKnockout && (
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
                         <View className="flex-row">
                           <TouchableOpacity
@@ -782,6 +957,29 @@ export default function FixturesByCategory() {
 
                     {isTeamFormat && fixtures.length > 0 ? (
                         <View>
+                          {hasKnockout && Object.keys(knockoutFixturesByRound).length > 0 && (
+                            <View className="mt-4">
+                              <Text className="text-xs font-semibold text-gray-500 mb-2">Knockout Stage</Text>
+                              {Object.keys(knockoutFixturesByRound)
+                                .map((k) => Number(k))
+                                .sort((a, b) => b - a)
+                                .map((roundNumber) => {
+                                  const roundMeta = roundsSorted.find((r) => r.round_number === roundNumber);
+                                  const title = roundMeta?.name || `Round ${roundNumber}`;
+                                  return (
+                                    <View key={roundNumber} className="mb-4">
+                                      <Text className="text-sm font-semibold text-gray-700 mb-1">{title}</Text>
+                                      {(knockoutFixturesByRound[roundNumber] || []).map((f) => renderFixture(f))}
+                                    </View>
+                                  );
+                                })}
+                            </View>
+                          )}
+
+                          {visibleGroups.length > 0 && (
+                            <Text className="text-xs font-semibold text-gray-500 mb-2 mt-4">Group Stage</Text>
+                          )}
+
                           {visibleGroups.map((g) => (
                             <View key={g.index} className="mb-4">
                               <Text className="text-xs font-semibold text-gray-500 mb-2">{g.label}</Text>
@@ -835,13 +1033,29 @@ export default function FixturesByCategory() {
             
             {activeTab === 'leaderboard' && (
                 <View className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    {organizerId && session?.user?.id === organizerId && !hasKnockout && (
-                      <View className="p-3 border-b border-gray-200">
+                    {isTeamFormat && organizerId && session?.user?.id === organizerId && !hasKnockout && (
+                      <View className="p-3 border-b border-gray-200 flex-row justify-between">
+                        <TouchableOpacity
+                          onPress={simulateGroupStage}
+                          className="bg-gray-800 active:bg-gray-900 px-4 py-2 rounded-lg"
+                        >
+                          <Text className="text-white font-semibold text-sm">Simulate Group Stage Results</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity
                           onPress={generateKnockout}
-                          className="self-end bg-blue-600 active:bg-blue-700 px-4 py-2 rounded-lg"
+                          className="bg-blue-600 active:bg-blue-700 px-4 py-2 rounded-lg"
                         >
                           <Text className="text-white font-semibold text-sm">Generate Knockout Stage</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {isTeamFormat && organizerId && session?.user?.id === organizerId && hasKnockout && (
+                      <View className="p-3 border-b border-gray-200 flex-row justify-end">
+                        <TouchableOpacity
+                          onPress={simulateKnockoutRound}
+                          className="bg-gray-800 active:bg-gray-900 px-4 py-2 rounded-lg"
+                        >
+                          <Text className="text-white font-semibold text-sm">Simulate Knockout Round</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -855,7 +1069,11 @@ export default function FixturesByCategory() {
                     {leaderboard.map((team: any, idx: number) => (
                         <View key={team.id} className="flex-row p-4 border-b border-gray-100 items-center">
                              <Text className="w-10 font-bold text-gray-700">{idx + 1}</Text>
-                             <Text className="flex-1 font-medium text-gray-900">{team.name}</Text>
+                             <View className="flex-1 flex-row items-center">
+                               <View className={`px-2 py-1 rounded-full ${teamColorClass(team.id)}`}>
+                                 <Text className="font-medium text-gray-900 text-xs">{team.name}</Text>
+                               </View>
+                             </View>
                              <Text className="w-10 text-right text-gray-600">{team.wins}</Text>
                              <Text className="w-16 text-right font-bold text-blue-600">{team.pointsFor}</Text>
                              <Text className="w-16 text-right text-gray-600">{team.diff > 0 ? '+' : ''}{team.diff}</Text>

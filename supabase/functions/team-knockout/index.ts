@@ -186,8 +186,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       matchesByFixture[m.fixture_id].push(m);
     }
 
-    const winners: number[] = [];
-    const runners: number[] = [];
+    type Qualified = TeamStats & { groupIndex: number; position: number };
+    const groupWinners: Qualified[] = [];
+    const groupRunners: Qualified[] = [];
 
     // Helper to compute standings within a group
     function computeGroupStandings(teamIds: number[]): TeamStats[] {
@@ -250,35 +251,83 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    for (const group of groups) {
+    // Build winners and runners per group
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
       if (group.length < 2) {
-        return new Response(JSON.stringify({ error: "Each group must have at least 2 teams for knockout" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Each group must have at least 2 teams for knockout" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
 
       const standings = computeGroupStandings(group);
       if (standings.length < 2) {
-        return new Response(JSON.stringify({ error: "Not enough completed matches in one or more groups" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Not enough completed matches in one or more groups" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
-      winners.push(standings[0].id);
-      runners.push(standings[1].id);
+
+      const winner = standings[0];
+      const runner = standings[1];
+      groupWinners.push({ ...winner, groupIndex: gi, position: 1 });
+      groupRunners.push({ ...runner, groupIndex: gi, position: 2 });
     }
 
-    const qualifiers: number[] = [...winners, ...runners];
-    if (qualifiers.length < 2) {
+    const candidateCount = groupWinners.length + groupRunners.length;
+    if (candidateCount < 2) {
       return new Response(JSON.stringify({ error: "Need at least 2 qualified teams for knockout" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const totalQualifiers = qualifiers.length;
-    const seeds: number[] = [...winners, ...runners];
+    function maxPowerOfTwoLE(n: number): number {
+      let p = 1;
+      while (p * 2 <= n) p *= 2;
+      return p;
+    }
+
+    const desiredSize = maxPowerOfTwoLE(candidateCount);
+    if (desiredSize < 2) {
+      return new Response(JSON.stringify({ error: "Could not determine knockout size" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const compareStats = (a: TeamStats, b: TeamStats) =>
+      b.wins - a.wins || b.pointsFor - a.pointsFor || b.diff - a.diff;
+
+    const sortedWinners = groupWinners.slice().sort(compareStats);
+    let selected: Qualified[] = [];
+
+    if (desiredSize <= sortedWinners.length) {
+      selected = sortedWinners.slice(0, desiredSize);
+    } else {
+      const selectedWinners = sortedWinners;
+      const remainingSlots = desiredSize - selectedWinners.length;
+      const sortedRunners = groupRunners.slice().sort(compareStats);
+      const selectedRunners = sortedRunners.slice(0, remainingSlots);
+      selected = [...selectedWinners, ...selectedRunners];
+    }
+
+    const seeds: number[] = selected.map((q) => q.id);
+    const totalQualifiers = seeds.length;
+
+    if (totalQualifiers < 2) {
+      return new Response(JSON.stringify({ error: "Need at least 2 qualified teams for knockout" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (seeds.length % 2 !== 0) {
       return new Response(JSON.stringify({ error: "Qualified team count must be even" }), {
@@ -293,10 +342,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const t1 = seeds[i];
       const t2 = seeds[n - 1 - i];
       if (t1 === t2) {
-        return new Response(JSON.stringify({ error: "Seeding produced duplicate pairing; please check groups" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Seeding produced duplicate pairing; please check groups" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
       pairs.push({ t1, t2 });
     }
