@@ -79,6 +79,33 @@ export default function SeederScreen() {
     }
   }
 
+  async function runCleanupOrphans() {
+    setLoading(true);
+    log("Starting cleanup for orphan seed users (no matching tournaments)...");
+    try {
+      const { data, error } = await supabase.functions.invoke("seed-team-tournament", {
+        body: {
+          op: "cleanup_orphan_seed_users",
+        },
+      });
+      if (error) {
+        const payload: any = data as any;
+        const serverMsg = (payload && (payload.error || payload.message)) || error.message || "Edge Function returned an error";
+        log(`Orphan cleanup error: ${serverMsg}`);
+        if (payload) {
+          log(`Orphan cleanup payload: ${JSON.stringify(payload)}`);
+        }
+        return;
+      }
+      log("Orphan seed user cleanup completed.");
+      log(JSON.stringify(data, null, 2));
+    } catch (e: any) {
+      log(`Orphan cleanup error: ${e.message || JSON.stringify(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function runCleanup() {
     const tag = cleanupSeedTag.trim();
     if (!tag) {
@@ -176,6 +203,20 @@ export default function SeederScreen() {
         >
           {loading ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold">Run Cleanup</Text>}
         </TouchableOpacity>
+
+        <View className="mt-4 border-t border-gray-200 pt-3">
+          <Text className="text-xs font-semibold text-gray-500 mb-1">Orphan Seed Users</Text>
+          <Text className="text-[11px] text-gray-400 mb-2">
+            Deletes seed-* and seed-org-* users whose seed tag is not used by any tournament. Use after manually deleting tournaments.
+          </Text>
+          <TouchableOpacity
+            onPress={runCleanupOrphans}
+            disabled={loading}
+            className={`p-3 rounded-lg items-center ${loading ? "bg-gray-300" : "bg-red-500 active:bg-red-600"}`}
+          >
+            {loading ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold">Clean Orphan Seed Users</Text>}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View className="bg-gray-900 p-4 rounded-xl min-h-[200px]">

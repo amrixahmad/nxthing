@@ -12,7 +12,7 @@ type Body = {
   organizer_id?: string;
   teams?: number; // Default 4
   seed_tag?: string;
-  op?: "create" | "cleanup";
+  op?: "create" | "cleanup" | "cleanup_orphan_seed_users";
 };
 
 function makeSeedTag() {
@@ -54,9 +54,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const rawBody = (await req.json().catch(() => ({}))) as Body;
-    const op = (rawBody.op || "create") as "create" | "cleanup";
+    const op = (rawBody.op || "create") as
+      | "create"
+      | "cleanup"
+      | "cleanup_orphan_seed_users";
     const rawSeed = (rawBody.seed_tag || "").trim();
-    const seedTag = op === "cleanup" ? rawSeed : rawSeed || makeSeedTag();
+    let seedTag = rawSeed;
+    if (op === "create" && !seedTag) {
+      seedTag = makeSeedTag();
+    }
 
     if (op === "cleanup") {
       if (!seedTag) {
@@ -108,6 +114,88 @@ Deno.serve(async (req: Request): Promise<Response> => {
           seed_tag: seedTag,
           deleted_tournaments: tourIds.length,
           deleted_users: deleted,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (op === "cleanup_orphan_seed_users") {
+      const { data: toursWithSeed, error: tErr2 } = await supabase
+        .from("tournaments")
+        .select("description")
+        .ilike("description", "seed:%");
+      if (tErr2) throw tErr2;
+
+      const activeTags = new Set<string>();
+      for (const t of (toursWithSeed as any[]) || []) {
+        const desc = ((t as any).description as string) || "";
+        const m = desc.match(/seed:([^ ]+)/);
+        if (m && m[1]) {
+          activeTags.add(m[1]);
+        }
+      }
+
+      let scanned = 0;
+      let deletedOrphans = 0;
+      let kept = 0;
+      let page = 1;
+      const perPage = 1000;
+      const orphanTags = new Set<string>();
+      const keptTags = new Set<string>();
+
+      while (true) {
+        const { data, error } = await (supabase as any).auth.admin.listUsers({ page, perPage });
+        if (error) throw error;
+        const users: any[] = data?.users || [];
+        if (users.length === 0) break;
+
+        for (const u of users) {
+          const email: string = u.email || "";
+          let tag: string | null = null;
+
+          if (email.startsWith("seed-org-")) {
+            const rest = email.substring("seed-org-".length);
+            const atIndex = rest.indexOf("@");
+            tag = atIndex >= 0 ? rest.substring(0, atIndex) : rest;
+          } else if (email.startsWith("seed-")) {
+            const rest = email.substring("seed-".length);
+            const atIndex = rest.indexOf("@");
+            const localPart = atIndex >= 0 ? rest.substring(0, atIndex) : rest;
+            const idx = localPart.indexOf("-t");
+            tag = idx >= 0 ? localPart.substring(0, idx) : localPart;
+          }
+
+          if (!tag) continue;
+
+          scanned++;
+
+          if (activeTags.has(tag)) {
+            kept++;
+            keptTags.add(tag);
+            continue;
+          }
+
+          const { error: duErr } = await (supabase as any).auth.admin.deleteUser(u.id);
+          if (!duErr) {
+            deletedOrphans++;
+            orphanTags.add(tag);
+          }
+        }
+
+        if (users.length < perPage) break;
+        page++;
+      }
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          op: "cleanup_orphan_seed_users",
+          scanned_seed_users: scanned,
+          deleted_users: deletedOrphans,
+          kept_users: kept,
+          active_tags: Array.from(activeTags),
+          orphan_tags: Array.from(orphanTags),
+          kept_tags: Array.from(keptTags),
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
