@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { Stack, router } from "expo-router";
 import * as Linking from "expo-linking";
+import { useSession } from "../../context/SessionProvider";
 
 export default function AuthCallback() {
   const [message, setMessage] = useState("Completing verification...");
+  const { session, loading } = useSession();
 
   useEffect(() => {
     (async () => {
@@ -16,6 +18,12 @@ export default function AuthCallback() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!loading && session) {
+      router.replace("/" as any);
+    }
+  }, [loading, session]);
 
   return (
     <View className="flex-1 bg-gray-50">
