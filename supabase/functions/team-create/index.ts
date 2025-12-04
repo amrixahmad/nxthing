@@ -119,7 +119,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           team_name: body.team_name,
           team_slogan: body.team_slogan ?? null,
           team_logo_url: body.team_logo_url ?? null,
-          payment_currency: "usd",
+          payment_currency: "myr",
           status: "pending",
           invite_code: invite,
         })

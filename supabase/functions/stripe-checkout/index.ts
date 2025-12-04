@@ -149,12 +149,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
     if (fee < 20) {
-      return new Response(JSON.stringify({ error: "Minimum registration fee is $20" }), {
+      return new Response(JSON.stringify({ error: "Minimum registration fee is RM 20" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const currency = (entry.payment_currency || "usd").toLowerCase();
+    const currency = (entry.payment_currency || "myr").toLowerCase();
 
     // Capacity check (MVP: first-come-first-served; no waitlist)
     const maxTeams = Number(category.max_teams ?? 0);

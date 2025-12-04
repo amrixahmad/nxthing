@@ -71,7 +71,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const full = await stripe.checkout.sessions.retrieve(session.id);
         const paid = full.payment_status === "paid";
         const totalCents = full.amount_total ?? null;
-        const sessCurrency = (full.currency || "usd").toLowerCase();
+        const sessCurrency = (full.currency || "myr").toLowerCase();
 
         const { data: entry } = await supabase
           .from("entries")
@@ -92,7 +92,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             .eq("id", entryId);
         } else {
           const expectedCents = Math.round(Number(entry.payment_amount ?? 0) * 100);
-          const expectedCurrency = String(entry.payment_currency || "usd").toLowerCase();
+          const expectedCurrency = String(entry.payment_currency || "myr").toLowerCase();
           if (totalCents !== expectedCents || sessCurrency !== expectedCurrency) {
             console.warn("Webhook: amount/currency mismatch", {
               entryId,

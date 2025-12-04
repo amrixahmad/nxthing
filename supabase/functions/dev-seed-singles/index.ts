@@ -250,7 +250,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .insert({
           category_id: categoryId,
           created_by: createdBy,
-          payment_currency: "usd",
+          payment_currency: "myr",
           payment_amount: 20.0,
           payment_status: "paid",
           payment_reference: `seed:${seedTag}`,

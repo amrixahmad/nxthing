@@ -12,9 +12,13 @@ type EntryRow = {
   payment_status: string;
   payment_amount: number | null;
   payment_currency: string | null;
+  team_name: string | null;
+  role: "captain" | "player";
+  created_at: string | null;
   category: {
     id: number;
     name?: string | null;
+    participation_type?: string | null;
     tournament?: {
       id: number;
       title?: string | null;
@@ -38,29 +42,50 @@ export default function MyEntries() {
   async function load() {
     if (!session?.user) return;
     setLoading(true);
-    const { data, error } = await supabase
+    const userId = session.user.id;
+
+    const { data: createdRows, error: createdErr } = await supabase
       .from("entries")
       .select(
-        `id, status, payment_status, payment_amount, payment_currency,
-         category:category_id ( id, name, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
+        `id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
+         category:category_id ( id, name, participation_type, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
       )
-      .eq("created_by", session.user.id)
-      .order("created_at", { ascending: false });
-    if (!error) {
-      const normalized: EntryRow[] = ((data as any[]) || []).map((r: any) => {
-        const cat = Array.isArray(r.category) ? r.category[0] : r.category;
+      .eq("created_by", userId);
+
+    const { data: memberRows, error: memberErr } = await supabase
+      .from("entry_members")
+      .select(
+        `entry_id,
+         entry:entry_id (
+           id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
+           category:category_id ( id, name, participation_type, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )
+         )`
+      )
+      .eq("profile_id", userId);
+
+    if (!createdErr && !memberErr) {
+      const byId: Record<number, EntryRow> = {};
+
+      function upsert(raw: any, role: "captain" | "player") {
+        if (!raw) return;
+        const cat = Array.isArray(raw.category) ? raw.category[0] : raw.category;
         const t = cat?.tournament;
         const tour = Array.isArray(t) ? t[0] : t;
-        return {
-          id: r.id,
-          status: r.status,
-          payment_status: r.payment_status,
-          payment_amount: r.payment_amount ?? null,
-          payment_currency: r.payment_currency ?? null,
+        const existing = byId[raw.id as number];
+        const next: EntryRow = {
+          id: raw.id as number,
+          status: raw.status,
+          payment_status: raw.payment_status,
+          payment_amount: raw.payment_amount ?? null,
+          payment_currency: raw.payment_currency ?? null,
+          team_name: raw.team_name ?? null,
+          created_at: raw.created_at ?? null,
+          role,
           category: cat
             ? {
                 id: cat.id,
                 name: cat.name ?? null,
+                participation_type: cat.participation_type ?? null,
                 tournament: tour
                   ? {
                       id: tour.id,
@@ -72,9 +97,32 @@ export default function MyEntries() {
                   : null,
               }
             : null,
-        } as EntryRow;
+        };
+
+        if (!existing || (existing.role !== "captain" && role === "captain")) {
+          byId[next.id] = next;
+        }
+      }
+
+      ((createdRows as any[]) || []).forEach((r) => {
+        upsert(r, "captain");
       });
-      setEntries(normalized);
+
+      ((memberRows as any[]) || []).forEach((m: any) => {
+        let e = m.entry;
+        if (Array.isArray(e)) e = e[0];
+        if (!e) return;
+        const isCreator = e.created_by === userId;
+        upsert(e, isCreator ? "captain" : "player");
+      });
+
+      const merged = Object.values(byId).sort((a, b) => {
+        const ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bd - ad;
+      });
+
+      setEntries(merged);
     }
     setLoading(false);
   }
@@ -129,7 +177,7 @@ export default function MyEntries() {
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
-      <Stack.Screen options={{ title: "My Entries" }} />
+      <Stack.Screen options={{ title: "My Teams & Entries" }} />
 
       <View className="px-4 mt-6">
         {notice && (
@@ -151,7 +199,7 @@ export default function MyEntries() {
         )}
 
         <View className="mb-3 flex-row justify-between items-center">
-          <Text className="text-lg font-semibold text-gray-900">Your Entries</Text>
+          <Text className="text-lg font-semibold text-gray-900">Your Teams & Entries</Text>
           <TouchableOpacity className="px-3 py-2 rounded-lg border border-gray-300" onPress={load}>
             <Text className="text-gray-800">Refresh</Text>
           </TouchableOpacity>
@@ -169,9 +217,16 @@ export default function MyEntries() {
           entries.map((e) => {
             const title = e.category?.tournament?.title || `Tournament #${e.category?.tournament?.id ?? "?"}`;
             const cat = e.category?.name || `Category #${e.category?.id ?? "?"}`;
+            const pType = e.category?.participation_type || null;
+            let roleLabel = "";
+            if (pType === "singles") {
+              roleLabel = "Singles";
+            } else if (pType) {
+              roleLabel = e.role === "captain" ? "Captain" : "Team member";
+            }
             const canPay = e.payment_status === "unpaid";
             const amount = e.payment_amount ?? 0;
-            const currency = (e.payment_currency || "usd").toUpperCase();
+            const currency = (e.payment_currency || "myr").toUpperCase();
             const isHighlight = highlightId === e.id;
             const t = e.category?.tournament;
             const isOpen = (() => {
@@ -190,6 +245,12 @@ export default function MyEntries() {
               >
                 <Text className="text-base font-medium text-gray-900">{title}</Text>
                 <Text className="text-sm text-gray-700 mt-1">{cat}</Text>
+                {pType === "team" && e.team_name ? (
+                  <Text className="text-xs text-gray-700 mt-0.5">Team: {e.team_name}</Text>
+                ) : null}
+                {roleLabel ? (
+                  <Text className="text-xs text-gray-500 mt-0.5">Role: {roleLabel}</Text>
+                ) : null}
                 <View className="mt-2 flex-row items-center">
                   <View className={`px-2 py-1 rounded ${isOpen ? "bg-green-100" : "bg-gray-100"}`}>
                     <Text className={`text-xs ${isOpen ? "text-green-800" : "text-gray-800"}`}>{isOpen ? "Registration Open" : "Registration Closed"}</Text>

@@ -81,7 +81,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const rows = Array.from({ length: count }, () => ({
       category_id: categoryId,
       created_by: createdBy ?? null,
-      payment_currency: "usd",
+      payment_currency: "myr",
       payment_amount: fee,
       payment_status: "paid",
       payment_reference: "dev_seed",

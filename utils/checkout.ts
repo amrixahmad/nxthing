@@ -43,7 +43,7 @@ export async function ensureEntry(userId: string, categoryId: number): Promise<n
 
   const { data: ins, error: insErr } = await supabase
     .from("entries")
-    .insert({ category_id: categoryId, created_by: userId, payment_currency: "usd", status: "pending" })
+    .insert({ category_id: categoryId, created_by: userId, payment_currency: "myr", status: "pending" })
     .select("id")
     .single();
   if (insErr) {

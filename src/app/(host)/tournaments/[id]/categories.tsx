@@ -40,6 +40,8 @@ export default function ManageCategories() {
   const [ptype, setPtype] = useState<"singles" | "doubles" | "team">("singles");
   const [fee, setFee] = useState("20");
   const [maxTeams, setMaxTeams] = useState("16");
+  const [teamMinFromTemplate, setTeamMinFromTemplate] = useState<number | null>(null);
+  const [teamMaxFromTemplate, setTeamMaxFromTemplate] = useState<number | null>(null);
 
   const [regStart, setRegStart] = useState("");
   const [regStartTime, setRegStartTime] = useState("");
@@ -117,11 +119,13 @@ export default function ManageCategories() {
 
   const templates = useMemo(
     () => [
-      { label: "Men's Singles", p: "singles" as const, n: "Men's Singles", teamMin: 1, teamMax: 1 },
-      { label: "Women's Singles", p: "singles" as const, n: "Women's Singles", teamMin: 1, teamMax: 1 },
+      { label: "Club Team Tie (6 players)", p: "team" as const, n: "Club Team Tie", teamMin: 6, teamMax: 6 },
+      { label: "Team Doubles (2 players)", p: "team" as const, n: "Team Doubles", teamMin: 2, teamMax: 2 },
       { label: "Men's Doubles", p: "doubles" as const, n: "Men's Doubles", teamMin: 2, teamMax: 2 },
       { label: "Women's Doubles", p: "doubles" as const, n: "Women's Doubles", teamMin: 2, teamMax: 2 },
       { label: "Mixed Doubles", p: "doubles" as const, n: "Mixed Doubles", teamMin: 2, teamMax: 2 },
+      { label: "Men's Singles", p: "singles" as const, n: "Men's Singles", teamMin: 1, teamMax: 1 },
+      { label: "Women's Singles", p: "singles" as const, n: "Women's Singles", teamMin: 1, teamMax: 1 },
     ],
     []
   );
@@ -159,7 +163,7 @@ export default function ManageCategories() {
 
     const { data: cats } = await supabase
       .from("tournament_categories")
-      .select("id,name,participation_type,registration_fee,max_teams")
+      .select("id,name,participation_type,registration_fee,max_teams,members_per_team_min,members_per_team_max")
       .eq("tournament_id", tid)
       .order("id", { ascending: true });
     setItems((cats as any[]) || []);
@@ -180,12 +184,14 @@ export default function ManageCategories() {
       setSaving(true);
       const regFee = Number(fee) || 0;
       if (regFee < 20) {
-        Alert.alert("Minimum fee is $20");
+        Alert.alert("Minimum fee is RM 20");
         return;
       }
       const max = Number(maxTeams) || null;
-      const teamMin = opts?.teamMin ?? (ptype === "doubles" ? 2 : 1);
-      const teamMax = opts?.teamMax ?? (ptype === "doubles" ? 2 : 1);
+      const defaultMin = ptype === "doubles" ? 2 : 1;
+      const defaultMax = ptype === "doubles" ? 2 : 1;
+      const teamMin = opts?.teamMin ?? teamMinFromTemplate ?? defaultMin;
+      const teamMax = opts?.teamMax ?? teamMaxFromTemplate ?? defaultMax;
       const { error } = await supabase.from("tournament_categories").insert({
         tournament_id: tid,
         name: name.trim(),
@@ -200,6 +206,8 @@ export default function ManageCategories() {
       setPtype("singles");
       setFee("20");
       setMaxTeams("16");
+      setTeamMinFromTemplate(null);
+      setTeamMaxFromTemplate(null);
       await load();
       toast.show({ type: "success", message: "Category added" });
     } catch (e) {
@@ -372,6 +380,8 @@ export default function ManageCategories() {
                 onPress={() => {
                   setName(t.n);
                   setPtype(t.p);
+                  setTeamMinFromTemplate(typeof t.teamMin === "number" ? t.teamMin : null);
+                  setTeamMaxFromTemplate(typeof t.teamMax === "number" ? t.teamMax : null);
                 }}
               >
                 <Text className="text-gray-800 text-sm">{t.label}</Text>
@@ -479,14 +489,14 @@ export default function ManageCategories() {
           </View>
 
           <View className="mb-3">
-            <Text className="text-sm text-gray-700 mb-1">Registration fee (USD)</Text>
+            <Text className="text-sm text-gray-700 mb-1">Registration fee (MYR)</Text>
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               keyboardType="numeric"
               value={fee}
               onChangeText={setFee}
             />
-            <Text className="text-xs text-gray-500 mt-1">Minimum fee is $20</Text>
+            <Text className="text-xs text-gray-500 mt-1">Minimum fee is RM 20</Text>
           </View>
 
           <View className="mb-4">
@@ -518,7 +528,19 @@ export default function ManageCategories() {
               <View key={c.id} className="flex-row items-center justify-between py-3 border-b border-gray-100">
                 <View>
                   <Text className="text-base text-gray-900">{c.name}</Text>
-                  <Text className="text-xs text-gray-600">{c.participation_type} • USD {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}</Text>
+                  <Text className="text-xs text-gray-600">
+                    {c.participation_type} • USD {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}
+                  </Text>
+                  {c.participation_type === "team" ? (
+                    <Text className="text-xs text-gray-600 mt-1">
+                      Team size: {""}
+                      {typeof (c as any).members_per_team_min === "number" && typeof (c as any).members_per_team_max === "number"
+                        ? (c as any).members_per_team_min === (c as any).members_per_team_max
+                          ? `${(c as any).members_per_team_min} players`
+                          : `${(c as any).members_per_team_min}–${(c as any).members_per_team_max} players`
+                        : "set in schema"}
+                    </Text>
+                  ) : null}
                 </View>
                 <View className="flex-row items-center">
                   <TouchableOpacity

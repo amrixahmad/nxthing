@@ -32,7 +32,7 @@ export default function RegisterAndPay() {
 
     const { data: ins, error: insErr } = await supabase
       .from("entries")
-      .insert({ category_id: catId, created_by: userId, payment_currency: "usd", status: "pending" })
+      .insert({ category_id: catId, created_by: userId, payment_currency: "myr", status: "pending" })
       .select("id")
       .single();
     if (insErr) throw insErr;
