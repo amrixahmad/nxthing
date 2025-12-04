@@ -529,7 +529,7 @@ export default function ManageCategories() {
                 <View>
                   <Text className="text-base text-gray-900">{c.name}</Text>
                   <Text className="text-xs text-gray-600">
-                    {c.participation_type} • USD {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}
+                    {c.participation_type} • MYR {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}
                   </Text>
                   {c.participation_type === "team" ? (
                     <Text className="text-xs text-gray-600 mt-1">

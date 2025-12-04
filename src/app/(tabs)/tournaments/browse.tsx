@@ -135,7 +135,7 @@ export default function BrowseTournaments() {
                   <View key={c.id} className="flex-row items-center justify-between mt-3">
                     <View>
                       <Text className="text-sm text-gray-800">{c.name || `Category #${c.id}`}</Text>
-                      <Text className="text-xs text-gray-600">USD {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
+                      <Text className="text-xs text-gray-600">MYR {Number(c.registration_fee ?? 0).toFixed(2)}</Text>
                     </View>
                   </View>
                 ))
