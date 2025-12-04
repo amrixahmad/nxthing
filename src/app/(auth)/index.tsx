@@ -17,7 +17,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Linking from "expo-linking";
 import { supabase } from "../../../lib/supabase";
 import { Stack, router } from "expo-router";
@@ -82,6 +84,7 @@ export default function Auth() {
   /** Toggle between sign in and sign up modes */
   const [isSignUp, setIsSignUp] = useState(false);
   const [notice, setNotice] = useState<null | { type: "success" | "error"; text: string }>(null);
+  const SHOW_APPLE_LOGIN = false;
 
   /**
    * Handles user sign in with email and password
@@ -259,16 +262,27 @@ export default function Auth() {
                 onPress={() => handleOAuthSignIn("google")}
                 disabled={loading}
               >
-                <Text className="text-gray-800 font-medium">Continue with Google</Text>
+                <View className="flex-row items-center">
+                  <Image
+                    source={{ uri: "https://developers.google.com/identity/images/g-logo.png" }}
+                    className="w-5 h-5 mr-2"
+                  />
+                  <Text className="text-gray-800 font-medium">Continue with Google</Text>
+                </View>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
-                onPress={() => handleOAuthSignIn("apple")}
-                disabled={loading}
-              >
-                <Text className="text-gray-800 font-medium">Continue with Apple</Text>
-              </TouchableOpacity>
+              {SHOW_APPLE_LOGIN && (
+                <TouchableOpacity
+                  className="flex-row items-center justify-center rounded-lg py-3 px-4 mb-3 bg-white border border-gray-300"
+                  onPress={() => handleOAuthSignIn("apple")}
+                  disabled={loading}
+                >
+                  <View className="flex-row items-center">
+                    <FontAwesome name="apple" size={18} color="#000000" />
+                    <Text className="ml-2 text-gray-800 font-medium">Continue with Apple</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
               <View className="flex-row items-center my-4">
                 <View className="flex-1 h-px bg-gray-200" />
