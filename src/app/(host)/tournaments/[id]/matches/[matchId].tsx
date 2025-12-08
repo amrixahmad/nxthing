@@ -5,7 +5,7 @@ import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useToast } from "@/src/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/context/SessionProvider";
-import { toDMY, toHM12, combineDateTime, parseTime12, parseDMY } from "@/src/utils/datetime";
+import { toHM12, parseTime12 } from "@/src/utils/datetime";
 
 type Match = {
   id: number;
@@ -265,7 +265,6 @@ export default function HostMatchDetail() {
 
   function setNow() {
     const now = new Date();
-    setDateStr(toDMY(now));
     setTimeStr(toHM12(now));
   }
 
@@ -274,20 +273,19 @@ export default function HostMatchDetail() {
       if (!match) return;
       if (!isOrganizer && !isReferee) return;
 
-      // Start from existing schedule; only organizers can modify date/time & court
+      // Build scheduled_at using tournament date + selected time
       let scheduledAt: string | null = match.scheduled_at;
-      if (isOrganizer) {
-        if (dateStr && timeStr) {
-          const dt = combineDateTime(dateStr, timeStr);
-          if (!dt) {
-            Alert.alert("Invalid date/time", "Please use dd/mm/yyyy and h:mm AM/PM");
-            return;
-          }
-          scheduledAt = dt.toISOString();
-        } else if (dateStr || timeStr) {
-          Alert.alert("Both date and time required", "Set both date and time or clear both");
-          return;
+      if (isOrganizer && timeStr) {
+        // Use tournament start date as the base date
+        const baseDate = tournamentDate ? new Date(tournamentDate) : new Date();
+        const parsedTime = parseTime12(timeStr);
+        if (parsedTime) {
+          baseDate.setHours(parsedTime.hours24, parsedTime.minutes, 0, 0);
+          scheduledAt = baseDate.toISOString();
         }
+      } else if (isOrganizer && !timeStr) {
+        // Clear schedule if time is cleared
+        scheduledAt = null;
       }
 
       const winnerId = winner === 1 ? match.entry1_id : winner === 2 ? match.entry2_id : null;
@@ -729,75 +727,6 @@ export default function HostMatchDetail() {
           )}
         </View>
       </View>
-
-      {calendarOpen && Platform.OS === "web" && (
-        <Modal visible={calendarOpen} transparent animationType="fade" onRequestClose={() => setCalendarOpen(false)}>
-          <View className="flex-1 bg-black/40 items-center justify-center px-4">
-            <View className="w-full max-w-md bg-white rounded-xl p-4">
-              <View className="flex-row items-center justify-between mb-3">
-                <TouchableOpacity
-                  className="px-3 py-2"
-                  onPress={() => {
-                    setCalMonth((m) => {
-                      const nm = m - 1;
-                      if (nm < 0) {
-                        setCalYear((y) => y - 1);
-                        return 11;
-                      }
-                      return nm;
-                    });
-                  }}
-                >
-                  <Text className="text-lg">‹</Text>
-                </TouchableOpacity>
-                <Text className="text-lg font-semibold">
-                  {new Date(calYear, calMonth, 1).toLocaleString(undefined, { month: "long", year: "numeric" })}
-                </Text>
-                <TouchableOpacity
-                  className="px-3 py-2"
-                  onPress={() => {
-                    setCalMonth((m) => {
-                      const nm = m + 1;
-                      if (nm > 11) {
-                        setCalYear((y) => y + 1);
-                        return 0;
-                      }
-                      return nm;
-                    });
-                  }}
-                >
-                  <Text className="text-lg">›</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View className="flex-row justify-between px-2 mb-2">
-                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((w) => (
-                  <Text key={w} className="w-10 text-center text-xs text-gray-500">{w}</Text>
-                ))}
-              </View>
-
-              {monthMatrix(calYear, calMonth).map((row, i) => (
-                <View key={i} className="flex-row justify-between px-2 mb-1">
-                  {row.map((d, j) => (
-                    <TouchableOpacity
-                      key={j}
-                      disabled={!d}
-                      onPress={() => d && selectCalendarDay(d)}
-                      className={`w-10 h-10 items-center justify-center rounded-lg ${d ? "bg-gray-100 active:bg-gray-200" : ""}`}
-                    >
-                      <Text className={`text-sm ${d ? "text-gray-800" : "text-transparent"}`}>{d ?? 0}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
-
-              <TouchableOpacity className="mt-3 py-3 rounded-lg border border-gray-300" onPress={() => setCalendarOpen(false)}>
-                <Text className="text-center text-gray-700">Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
 
       {timeOpen && Platform.OS === "web" && (
         <Modal visible={timeOpen} transparent animationType="fade" onRequestClose={() => setTimeOpen(false)}>
