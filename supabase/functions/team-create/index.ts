@@ -21,12 +21,19 @@ type CreateTeamResponse = {
   invite_url: string;
 };
 
-function makeInviteCode(): string {
-  const words = "ALPHA,BRAVO,CHARLIE,DELTA,ECHO,FOXTROT,GOLF,HOTEL,INDIA,JULIETT,KILO,LIMA,MIKE,NOVEMBER,OSCAR,PAPA,QUEBEC,ROMEO,SIERRA,TANGO,UNIFORM,VICTOR,WHISKEY,XRAY,YANKEE,ZEAL".split(",");
-  const w = words[Math.floor(Math.random() * words.length)];
+function slugify(str: string): string {
+  return str
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 20);
+}
+
+function makeInviteCode(teamName: string, tournamentTitle: string): string {
+  const teamSlug = slugify(teamName) || "TEAM";
+  const tourneySlug = slugify(tournamentTitle).slice(0, 12) || "TOURNEY";
   const num = Math.floor(100 + Math.random() * 900);
-  const letters = Math.random().toString(36).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "TEAM";
-  return `TEAM-${w}-${letters}${num}`;
+  return `${teamSlug}-${tourneySlug}-${num}`;
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -83,7 +90,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const { data: catRows, error: catErr } = await supabase
       .from("tournament_categories")
       .select(
-        `id, name, registration_fee, members_per_team_max, tournament:tournament_id (id, status, registration_start_date, registration_end_date)`
+        `id, name, registration_fee, members_per_team_max, tournament:tournament_id (id, title, status, registration_start_date, registration_end_date)`
       )
       .eq("id", body.category_id)
       .limit(1);
@@ -107,10 +114,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // Create entry (team) with unique invite_code
+    const tournamentTitle = category.tournament?.title || "Tournament";
     let invite = "";
     let entryId: number | null = null;
     for (let i = 0; i < 5; i++) {
-      invite = makeInviteCode();
+      invite = makeInviteCode(body.team_name, tournamentTitle);
       const { data: ins, error: insErr } = await supabase
         .from("entries")
         .insert({

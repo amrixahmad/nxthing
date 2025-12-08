@@ -148,8 +148,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (fee < 20) {
-      return new Response(JSON.stringify({ error: "Minimum registration fee is RM 20" }), {
+    if (fee < 1) {
+      return new Response(JSON.stringify({ error: "Minimum registration fee is RM 1" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
