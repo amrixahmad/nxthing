@@ -13,6 +13,8 @@ type Body = {
   teams?: number; // Default 4
   seed_tag?: string;
   op?: "create" | "cleanup" | "cleanup_orphan_seed_users";
+  generate_bracket?: boolean; // Auto-generate bracket after seeding
+  simulate_scores?: boolean; // Generate random scores for matches
 };
 
 function makeSeedTag() {
@@ -30,6 +32,26 @@ function indexToLetters(idx: number): string {
     n = Math.floor(n / 26) - 1;
   }
   return label;
+}
+
+// Seeded shuffle for deterministic randomization
+function seededShuffleIds(arr: number[], seed: number): number[] {
+  function mulberry32(a: number) {
+    return function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rnd = mulberry32(seed);
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -203,8 +225,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const body = rawBody;
     const requestedTeams = Number(body.teams || 4);
-    const numTeams = Math.max(2, Math.min(requestedTeams, 32));
+    const numTeams = Math.max(2, Math.min(requestedTeams, 64)); // Increased max to 64 for larger tournaments
     const PLAYERS_PER_TEAM = 6;
+    const generateBracket = body.generate_bracket !== false; // Default true
+    const simulateScores = body.simulate_scores === true; // Default false
 
     // 1. Get/Create Organizer
     let organizer_uuid: string | null = null;
@@ -213,21 +237,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const organizerId = (body.organizer_id || "").trim();
     if (organizerId) {
-      const { data: prof, error: pErr } = await supabase
-        .from("profiles")
-        .select("id, full_name, username")
-        .eq("id", organizerId)
-        .maybeSingle();
-      if (pErr) throw pErr;
-      if (prof && (prof as any).id) {
-        organizer_uuid = (prof as any).id as string;
-        const fullName = (prof as any).full_name as string | null;
-        const username = (prof as any).username as string | null;
-        organizer_display_name = fullName || username || null;
+      // First check if this is a valid UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(organizerId)) {
+        const { data: prof, error: pErr } = await supabase
+          .from("profiles")
+          .select("id, full_name, username")
+          .eq("id", organizerId)
+          .maybeSingle();
+        if (pErr) {
+          console.error("Error fetching organizer profile:", pErr.message);
+        }
+        if (prof && (prof as any).id) {
+          organizer_uuid = (prof as any).id as string;
+          const fullName = (prof as any).full_name as string | null;
+          const username = (prof as any).username as string | null;
+          organizer_display_name = fullName || username || null;
+          console.log(`Using existing organizer: ${organizer_uuid}`);
+        } else {
+          console.log(`Organizer profile not found for ID: ${organizerId}`);
+        }
+      } else {
+        console.log(`Invalid organizer_id format: ${organizerId}`);
       }
     }
 
     if (!organizer_uuid) {
+      console.log("Creating new organizer user...");
       const orgUser = `seed-org-${seedTag}`;
       const email = `${orgUser}@dev.local`;
       const password = "Password!123";
@@ -366,20 +402,207 @@ Deno.serve(async (req: Request): Promise<Response> => {
         }
     }
 
+    // 6. Auto-generate bracket if requested
+    let bracketGenerated = false;
+    let matchesCreated = 0;
+    let scoresSimulated = 0;
+
+    if (generateBracket) {
+        console.log("Generating bracket...");
+        
+        // Call generate-bracket function logic inline
+        const groupSize = 4;
+        const shuffled = seededShuffleIds(createdEntries, categoryId);
+        const groups: number[][] = [];
+        for (let i = 0; i < shuffled.length; i += groupSize) {
+            groups.push(shuffled.slice(i, i + groupSize));
+        }
+
+        const groupRounds: { t1: number | null; t2: number | null }[][][] = [];
+        let maxRounds = 0;
+
+        for (let g = 0; g < groups.length; g++) {
+            const baseTeams = groups[g];
+            if (baseTeams.length <= 1) {
+                groupRounds[g] = [];
+                continue;
+            }
+
+            const groupTeams: (number | null)[] = [...baseTeams];
+            if (groupTeams.length % 2 !== 0) {
+                groupTeams.push(null);
+            }
+
+            const n = groupTeams.length;
+            const matchesPerRound = n / 2;
+            const roundsForGroup: { t1: number | null; t2: number | null }[][] = [];
+            let currentTeams = [...groupTeams];
+            const totalGroupRounds = n - 1;
+
+            for (let r = 0; r < totalGroupRounds; r++) {
+                const roundPairings: { t1: number | null; t2: number | null }[] = [];
+                for (let i = 0; i < matchesPerRound; i++) {
+                    const t1 = currentTeams[i];
+                    const t2 = currentTeams[n - 1 - i];
+                    roundPairings.push({ t1, t2 });
+                }
+
+                roundsForGroup.push(roundPairings);
+
+                const fixed = currentTeams[0];
+                const rotating = currentTeams.slice(1);
+                const last = rotating.pop();
+                if (last !== undefined) rotating.unshift(last);
+                currentTeams = [fixed, ...rotating];
+            }
+
+            groupRounds[g] = roundsForGroup as any;
+            if (roundsForGroup.length > maxRounds) {
+                maxRounds = roundsForGroup.length;
+            }
+        }
+
+        if (maxRounds > 0) {
+            // Insert rounds
+            const roundRows = Array.from({ length: maxRounds }, (_, idx) => ({
+                tournament_id: tournamentId,
+                category_id: categoryId,
+                round_number: idx + 1,
+                name: `Round ${idx + 1}`,
+            }));
+            await supabase.from("rounds").insert(roundRows);
+
+            // Insert fixtures
+            const fixturesToInsert: any[] = [];
+            for (let r = 0; r < maxRounds; r++) {
+                for (let g = 0; g < groups.length; g++) {
+                    const roundsForGroup = groupRounds[g] as { t1: number | null; t2: number | null }[][];
+                    if (!roundsForGroup || r >= roundsForGroup.length) continue;
+                    const pairings = roundsForGroup[r] || [];
+
+                    for (const pairing of pairings) {
+                        const { t1, t2 } = pairing;
+                        if (t1 !== null && t2 !== null) {
+                            fixturesToInsert.push({
+                                tournament_id: tournamentId,
+                                category_id: categoryId,
+                                round_number: r + 1,
+                                entry1_id: t1,
+                                entry2_id: t2,
+                                status: 'scheduled',
+                                stage: 'group',
+                            });
+                        } else if (t1 !== null || t2 !== null) {
+                            fixturesToInsert.push({
+                                tournament_id: tournamentId,
+                                category_id: categoryId,
+                                round_number: r + 1,
+                                entry1_id: t1 || t2,
+                                entry2_id: null,
+                                status: 'bye',
+                                stage: 'group',
+                            });
+                        }
+                    }
+                }
+            }
+
+            const { data: insertedFixtures, error: fErr } = await supabase
+                .from("fixtures")
+                .insert(fixturesToInsert)
+                .select("id, round_number, status, entry1_id, entry2_id");
+
+            if (fErr) {
+                console.error("Error inserting fixtures:", fErr.message);
+            } else {
+                // Insert sub-matches for each fixture
+                const subMatchesToInsert: any[] = [];
+                let matchIndexCounter = 0;
+
+                for (const fix of (insertedFixtures as any[])) {
+                    if (fix.status !== 'scheduled') continue;
+
+                    const subMatchTypes = [
+                        { type: 'MD', session: 1 },
+                        { type: 'WD', session: 1 },
+                        { type: 'XD', session: 2 },
+                        { type: 'S', session: 2 },
+                    ];
+
+                    for (const sm of subMatchTypes) {
+                        subMatchesToInsert.push({
+                            tournament_id: tournamentId,
+                            category_id: categoryId,
+                            round_number: fix.round_number,
+                            index_in_round: ++matchIndexCounter,
+                            fixture_id: fix.id,
+                            sub_match_type: sm.type,
+                            session_sequence: sm.session,
+                            status: 'pending',
+                            entry1_id: fix.entry1_id,
+                            entry2_id: fix.entry2_id,
+                        });
+                    }
+                }
+
+                if (subMatchesToInsert.length > 0) {
+                    const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
+                    if (smErr) {
+                        console.error("Error inserting sub-matches:", smErr.message);
+                    } else {
+                        matchesCreated = subMatchesToInsert.length;
+                        bracketGenerated = true;
+                    }
+                }
+
+                // 7. Simulate scores if requested
+                if (simulateScores && bracketGenerated) {
+                    console.log("Simulating scores...");
+                    const { data: allMatches } = await supabase
+                        .from("matches")
+                        .select("id, sub_match_type, entry1_id, entry2_id")
+                        .eq("category_id", categoryId);
+
+                    for (const m of (allMatches as any[]) || []) {
+                        // Generate random scores (15-21 range typical for pickleball)
+                        const p1Score = Math.floor(Math.random() * 10) + 15;
+                        const p2Score = Math.floor(Math.random() * 10) + 15;
+                        const winnerEntryId = p1Score > p2Score ? m.entry1_id : m.entry2_id;
+
+                        const { error: updateErr } = await supabase.from("matches").update({
+                            entry1_points: p1Score,
+                            entry2_points: p2Score,
+                            winner_entry_id: winnerEntryId,
+                            status: 'completed',
+                        }).eq("id", m.id);
+                        
+                        if (!updateErr) scoresSimulated++;
+                    }
+                }
+            }
+        }
+    }
+
     return new Response(JSON.stringify({
         ok: true,
         tournament_id: tournamentId,
         category_id: categoryId,
         tournament_title: title,
         seed_tag: seedTag,
+        organizer_id: organizer_uuid,
         organizer_email: organizer_email,
         organizer_password: organizer_email ? "Password!123" : null,
         used_existing_organizer: organizer_email === null,
         requested_teams: requestedTeams,
         actual_teams: numTeams,
-        max_teams_cap: 32,
+        max_teams_cap: 64,
         entries_created: createdEntries.length,
-        message: "Tournament seeded with teams and full rosters. Ready to generate bracket."
+        bracket_generated: bracketGenerated,
+        matches_created: matchesCreated,
+        scores_simulated: scoresSimulated,
+        message: bracketGenerated 
+            ? `Tournament seeded with ${numTeams} teams. Bracket generated with ${matchesCreated} matches.${simulateScores ? ` ${scoresSimulated} scores simulated.` : ''}`
+            : "Tournament seeded with teams and full rosters. Ready to generate bracket."
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (err) {
