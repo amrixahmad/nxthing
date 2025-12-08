@@ -81,6 +81,7 @@ export default function ManageCategories() {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [items, setItems] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState("");
@@ -416,10 +417,7 @@ export default function ManageCategories() {
   }
 
   return (
-    <ScrollView 
-      className="flex-1 bg-gray-50"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
+    <ScrollView className="flex-1 bg-gray-50">
       <Stack.Screen options={{ title: tournament?.title || `Tournament #${tid}` }} />
 
       <View className="px-4 mt-6">
