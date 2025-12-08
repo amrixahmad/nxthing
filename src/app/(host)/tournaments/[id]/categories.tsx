@@ -1,9 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Modal } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useToast } from "@/src/components/Toast";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
+
+// Helper functions for date/time formatting
+function toDMY(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function toHM12(d: Date): string {
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function parseTime12(s: string): { hours24: number; minutes: number } | null {
+  const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const pm = m[3].toUpperCase() === "PM";
+  if (h === 12) h = 0;
+  if (pm) h += 12;
+  return { hours24: h, minutes: min };
+}
+
+function parseDMY(s: string): Date | null {
+  const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const d = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10) - 1;
+  const y = parseInt(m[3], 10);
+  const dt = new Date(y, mo, d);
+  if (isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function combineDateTime(dateStr: string, timeStr: string): Date | null {
+  const d = parseDMY(dateStr);
+  if (!d) return null;
+  const t = parseTime12(timeStr);
+  if (!t) return null;
+  d.setHours(t.hours24, t.minutes, 0, 0);
+  return d;
+}
 
 type Category = {
   id: number;
@@ -179,12 +228,22 @@ export default function ManageCategories() {
         Alert.alert("Name required");
         return;
       }
-      setSaving(true);
       const regFee = Number(fee) || 0;
       if (regFee < 1) {
         Alert.alert("Minimum fee is RM 1");
         return;
       }
+      setSaving(true);
+      
+      // Check for duplicate category name
+      const trimmedName = name.trim().toLowerCase();
+      const exists = items.some((c) => c.name.toLowerCase() === trimmedName);
+      if (exists) {
+        Alert.alert("Category exists", "A category with this name already exists in this tournament.");
+        setSaving(false);
+        return;
+      }
+      
       const max = Number(maxTeams) || null;
       const defaultMin = ptype === "doubles" ? 2 : 1;
       const defaultMax = ptype === "doubles" ? 2 : 1;
