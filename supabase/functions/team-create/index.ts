@@ -104,9 +104,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (Array.isArray(category.tournament)) category.tournament = category.tournament[0];
 
     const now = new Date();
-    const start = new Date(category.tournament.registration_start_date);
-    const end = new Date(category.tournament.registration_end_date);
-    if (category.tournament.status !== "registration_open" || !(now >= start && now <= end)) {
+    const start = category.tournament.registration_start_date ? new Date(category.tournament.registration_start_date) : null;
+    const end = category.tournament.registration_end_date ? new Date(category.tournament.registration_end_date) : null;
+    const inWindow = !!(start && end && now >= start && now <= end);
+    // Registration is open if status is 'registration_open' OR we're within the window
+    const isOpen = category.tournament.status === "registration_open" || inWindow;
+    if (!isOpen) {
       return new Response(JSON.stringify({ error: "Registration is closed" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
