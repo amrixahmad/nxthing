@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useSession } from "@/context/SessionProvider";
 import { toDMY, toHM12, combineDateTime, parseTime12, parseDMY } from "@/src/utils/datetime";
 
- type Match = {
+type Match = {
   id: number;
   tournament_id: number;
   category_id: number;
@@ -26,7 +26,12 @@ import { toDMY, toHM12, combineDateTime, parseTime12, parseDMY } from "@/src/uti
   session_sequence: number | null;
 };
 
- type RefOption = {
+type TeamMember = {
+  profile_id: string;
+  display_name: string;
+};
+
+type RefOption = {
   id: string;
   name: string;
   email: string | null;
@@ -41,21 +46,22 @@ export default function HostMatchDetail() {
 
   const [loading, setLoading] = useState(true);
   const [match, setMatch] = useState<Match | null>(null);
-  const [p1Name, setP1Name] = useState("-");
-  const [p2Name, setP2Name] = useState("-");
+  const [team1Name, setTeam1Name] = useState("-");
+  const [team2Name, setTeam2Name] = useState("-");
+  const [team1Members, setTeam1Members] = useState<TeamMember[]>([]);
+  const [team2Members, setTeam2Members] = useState<TeamMember[]>([]);
+  const [team1Players, setTeam1Players] = useState<string[]>([]);
+  const [team2Players, setTeam2Players] = useState<string[]>([]);
+  const [showPlayerPicker, setShowPlayerPicker] = useState<{ team: 1 | 2; position: number } | null>(null);
 
   // editable fields
   const [status, setStatus] = useState<string>("pending");
   const [court, setCourt] = useState<string>("");
-  const [dateStr, setDateStr] = useState<string>("");
   const [timeStr, setTimeStr] = useState<string>("");
   const [winner, setWinner] = useState<0 | 1 | 2 | null>(null); // 0 none, 1 p1, 2 p2
   const [games, setGames] = useState<Array<{ p1: string; p2: string }>>([]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
-  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [tournamentDate, setTournamentDate] = useState<string | null>(null);
   const [timeOpen, setTimeOpen] = useState(false);
   const [timeHour, setTimeHour] = useState<number>(9);
   const [timeMinute, setTimeMinute] = useState<number>(0);
@@ -68,33 +74,6 @@ export default function HostMatchDetail() {
   function shortName(s: string) {
     const str = String(s || "").trim();
     return str.length > 28 ? str.slice(0, 28) + "…" : str || "-";
-  }
-
-  function monthMatrix(y: number, m: number) {
-    const first = new Date(y, m, 1);
-    const firstWeekday = first.getDay();
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const cells: Array<number | null> = [];
-    for (let i = 0; i < firstWeekday; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-    while (cells.length % 7 !== 0) cells.push(null);
-    const rows: Array<Array<number | null>> = [];
-    for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
-    return rows;
-  }
-
-  function openCalendarForSchedule() {
-    const dt = parseDMY(dateStr || "") || new Date();
-    setCalYear(dt.getFullYear());
-    setCalMonth(dt.getMonth());
-    setCalendarOpen(true);
-  }
-
-  function selectCalendarDay(day: number) {
-    const dt = new Date(calYear, calMonth, day);
-    const dmy = toDMY(dt);
-    setDateStr(dmy);
-    setCalendarOpen(false);
   }
 
   function openWebTimePicker() {
@@ -164,10 +143,12 @@ export default function HostMatchDetail() {
       // Access guard: allow tournament organizer or assigned referee
       const { data: tOrg } = await supabase
         .from("tournaments")
-        .select("id, organizer_id")
+        .select("id, organizer_id, start_date")
         .eq("id", mm.tournament_id)
         .maybeSingle();
       const orgId = (tOrg as any)?.organizer_id as string | null | undefined;
+      const tournamentStartDate = (tOrg as any)?.start_date as string | null | undefined;
+      setTournamentDate(tournamentStartDate || null);
       const uid = session?.user?.id || null;
       const refId = (mmRaw as any)?.referee_profile_id as string | null | undefined;
       const isOrg = !!uid && !!orgId && uid === orgId;
@@ -202,10 +183,8 @@ export default function HostMatchDetail() {
       setRefereeId((mmRaw as any)?.referee_profile_id || null);
       if (mm.scheduled_at) {
         const dt = new Date(mm.scheduled_at);
-        setDateStr(toDMY(dt));
         setTimeStr(toHM12(dt));
       } else {
-        setDateStr("");
         setTimeStr("");
       }
       if (mm.winner_entry_id && mm.entry1_id && mm.winner_entry_id === mm.entry1_id) setWinner(1);
@@ -219,25 +198,59 @@ export default function HostMatchDetail() {
         setGames([]);
       }
 
-      // Load names
+      // Load team names and members
       const ids: number[] = [mm.entry1_id || 0, mm.entry2_id || 0].filter(Boolean) as number[];
       if (ids.length > 0) {
+        // Get team names from entries
+        const { data: entries } = await supabase
+          .from("entries")
+          .select("id, team_name")
+          .in("id", ids);
+        const entryMap: Record<number, string> = {};
+        for (const e of (entries as any[]) || []) {
+          entryMap[e.id] = e.team_name || `Team #${e.id}`;
+        }
+        if (mm.entry1_id) setTeam1Name(entryMap[mm.entry1_id] || `Team #${mm.entry1_id}`);
+        if (mm.entry2_id) setTeam2Name(entryMap[mm.entry2_id] || `Team #${mm.entry2_id}`);
+
+        // Get team members
         const { data: mems } = await supabase
           .from("entry_members")
-          .select("entry_id, display_name, profile:profile_id(id, username, full_name)")
+          .select("entry_id, profile_id, display_name, profile:profile_id(id, username, full_name)")
           .in("entry_id", ids);
-        const map: Record<number, string[]> = {};
+        const members1: TeamMember[] = [];
+        const members2: TeamMember[] = [];
         for (const r of (mems as any[]) || []) {
           const entryId = r.entry_id as number;
           const prof = r.profile as any;
           const fallback = prof?.id ? `Player ${String(prof.id).slice(0, 6)}` : "Player";
           const nameRaw = r.display_name || prof?.full_name || prof?.username || fallback;
-          const name = String(nameRaw).trim();
-          if (!map[entryId]) map[entryId] = [];
-          map[entryId].push(name);
+          const member: TeamMember = {
+            profile_id: r.profile_id,
+            display_name: String(nameRaw).trim(),
+          };
+          if (entryId === mm.entry1_id) members1.push(member);
+          if (entryId === mm.entry2_id) members2.push(member);
         }
-        if (mm.entry1_id) setP1Name((map[mm.entry1_id] || []).join(" / ") || `Entry #${mm.entry1_id}`);
-        if (mm.entry2_id) setP2Name((map[mm.entry2_id] || []).join(" / ") || `Entry #${mm.entry2_id}`);
+        setTeam1Members(members1);
+        setTeam2Members(members2);
+
+        // Load existing player assignments for this match
+        const { data: assignments } = await supabase
+          .from("match_player_assignments")
+          .select("entry_id, position, profile_id")
+          .eq("match_id", mm.id);
+        const t1Players: string[] = [];
+        const t2Players: string[] = [];
+        for (const a of (assignments as any[]) || []) {
+          if (a.entry_id === mm.entry1_id) {
+            t1Players[a.position - 1] = a.profile_id;
+          } else if (a.entry_id === mm.entry2_id) {
+            t2Players[a.position - 1] = a.profile_id;
+          }
+        }
+        setTeam1Players(t1Players);
+        setTeam2Players(t2Players);
       }
     } catch (e) {
       if (e instanceof Error) Alert.alert("Error", e.message);
@@ -350,6 +363,49 @@ export default function HostMatchDetail() {
         await supabase.from("matches").update(updates).eq("id", match.next_match_id);
       }
 
+      // Save player assignments
+      if (canEditScore) {
+        // Delete existing assignments for this match
+        await supabase.from("match_player_assignments").delete().eq("match_id", match.id);
+        
+        // Insert new assignments
+        const assignments: Array<{ match_id: number; entry_id: number; profile_id: string; position: number }> = [];
+        
+        if (match.entry1_id) {
+          team1Players.forEach((profileId, idx) => {
+            if (profileId) {
+              assignments.push({
+                match_id: match.id,
+                entry_id: match.entry1_id!,
+                profile_id: profileId,
+                position: idx + 1,
+              });
+            }
+          });
+        }
+        
+        if (match.entry2_id) {
+          team2Players.forEach((profileId, idx) => {
+            if (profileId) {
+              assignments.push({
+                match_id: match.id,
+                entry_id: match.entry2_id!,
+                profile_id: profileId,
+                position: idx + 1,
+              });
+            }
+          });
+        }
+        
+        if (assignments.length > 0) {
+          const { error: assignErr } = await supabase.from("match_player_assignments").insert(assignments);
+          if (assignErr) {
+            console.error("Failed to save player assignments:", assignErr);
+            // Don't fail the whole save, just log the error
+          }
+        }
+      }
+
       toast.show({ type: "success", message: "Match saved" });
       const roundParam = match.round_number;
       router.replace({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(match.category_id), initialRound: String(roundParam) } } as any);
@@ -377,171 +433,238 @@ export default function HostMatchDetail() {
             <Text className="text-gray-600">Loading...</Text>
           ) : (
             <View>
-              <Text className="text-base font-semibold text-gray-900 mb-2">Participants</Text>
-              <View className="mb-3">
-                <Text className="text-gray-900">{p1Name}</Text>
-                <Text className="text-gray-500">vs</Text>
-                <Text className="text-gray-900">{p2Name}</Text>
+              {/* Match Type Badge */}
+              {match.sub_match_type && (
+                <View className="mb-4">
+                  <View className={`self-start px-3 py-1 rounded-full ${
+                    match.sub_match_type === 'MD' ? 'bg-blue-100' :
+                    match.sub_match_type === 'WD' ? 'bg-pink-100' :
+                    match.sub_match_type === 'XD' ? 'bg-purple-100' : 'bg-gray-100'
+                  }`}>
+                    <Text className={`text-sm font-medium ${
+                      match.sub_match_type === 'MD' ? 'text-blue-800' :
+                      match.sub_match_type === 'WD' ? 'text-pink-800' :
+                      match.sub_match_type === 'XD' ? 'text-purple-800' : 'text-gray-800'
+                    }`}>
+                      {match.sub_match_type === 'MD' ? "Men's Doubles" :
+                       match.sub_match_type === 'WD' ? "Women's Doubles" :
+                       match.sub_match_type === 'XD' ? "Mixed Doubles" :
+                       match.sub_match_type === 'S' ? "Singles" : match.sub_match_type}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Teams vs Teams - Mobile Friendly */}
+              <View className="mb-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-1 items-center">
+                    <View className="w-12 h-12 rounded-full bg-blue-600 items-center justify-center mb-2">
+                      <Text className="text-white font-bold text-lg">
+                        {(team1Name || "T1").slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text className="text-sm font-semibold text-gray-900 text-center" numberOfLines={2}>
+                      {team1Name}
+                    </Text>
+                  </View>
+                  <View className="px-4">
+                    <Text className="text-2xl font-bold text-gray-400">VS</Text>
+                  </View>
+                  <View className="flex-1 items-center">
+                    <View className="w-12 h-12 rounded-full bg-indigo-600 items-center justify-center mb-2">
+                      <Text className="text-white font-bold text-lg">
+                        {(team2Name || "T2").slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text className="text-sm font-semibold text-gray-900 text-center" numberOfLines={2}>
+                      {team2Name}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
+              {/* Player Selection for this Match */}
+              <Text className="text-base font-semibold text-gray-900 mb-2">Players for this Match</Text>
+              <Text className="text-xs text-gray-500 mb-3">
+                {match.sub_match_type === 'S' ? 'Select 1 player from each team' : 'Select 2 players from each team for doubles'}
+              </Text>
+              
+              <View className="flex-row mb-4">
+                {/* Team 1 Players */}
+                <View className="flex-1 mr-2">
+                  <Text className="text-xs font-medium text-blue-700 mb-2">{shortName(team1Name)}</Text>
+                  {[0, ...(match.sub_match_type !== 'S' ? [1] : [])].map((pos) => {
+                    const selectedId = team1Players[pos];
+                    const selectedMember = team1Members.find(m => m.profile_id === selectedId);
+                    return (
+                      <TouchableOpacity
+                        key={pos}
+                        className={`mb-2 p-3 rounded-lg border ${selectedMember ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-200 border-dashed'}`}
+                        onPress={() => setShowPlayerPicker({ team: 1, position: pos })}
+                        disabled={!canEditScore}
+                      >
+                        <Text className={`text-sm ${selectedMember ? 'text-blue-900 font-medium' : 'text-gray-400'}`}>
+                          {selectedMember?.display_name || `Select Player ${pos + 1}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                
+                {/* Team 2 Players */}
+                <View className="flex-1 ml-2">
+                  <Text className="text-xs font-medium text-indigo-700 mb-2">{shortName(team2Name)}</Text>
+                  {[0, ...(match.sub_match_type !== 'S' ? [1] : [])].map((pos) => {
+                    const selectedId = team2Players[pos];
+                    const selectedMember = team2Members.find(m => m.profile_id === selectedId);
+                    return (
+                      <TouchableOpacity
+                        key={pos}
+                        className={`mb-2 p-3 rounded-lg border ${selectedMember ? 'bg-indigo-50 border-indigo-300' : 'bg-gray-50 border-gray-200 border-dashed'}`}
+                        onPress={() => setShowPlayerPicker({ team: 2, position: pos })}
+                        disabled={!canEditScore}
+                      >
+                        <Text className={`text-sm ${selectedMember ? 'text-indigo-900 font-medium' : 'text-gray-400'}`}>
+                          {selectedMember?.display_name || `Select Player ${pos + 1}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Status */}
               <Text className="text-base font-semibold text-gray-900 mb-2">Status</Text>
-              <View className="flex-row flex-wrap -m-1 mb-4">
+              <View className="flex-row flex-wrap mb-4">
                 {statuses.map((s) => (
-                  <TouchableOpacity key={s} className={`m-1 px-3 py-2 rounded-lg border ${status === s ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} onPress={() => setStatus(s)}>
-                    <Text className={status === s ? 'text-white' : 'text-gray-800'}>{s}</Text>
+                  <TouchableOpacity 
+                    key={s} 
+                    className={`mr-2 mb-2 px-3 py-2 rounded-lg border ${status === s ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`} 
+                    onPress={() => setStatus(s)}
+                    disabled={!canEditStatus}
+                  >
+                    <Text className={`text-sm ${status === s ? 'text-white' : 'text-gray-800'}`}>{s}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
+              {/* Score - Simplified to 1 game */}
               <Text className="text-base font-semibold text-gray-900 mb-2">Score</Text>
-              {games.map((g, idx) => (
-                <View key={idx} className="flex-row items-center mb-2">
-                  <Text className="w-16 text-gray-700">Game {idx+1}</Text>
+              <View className="flex-row items-center mb-4">
+                <View className="flex-1">
+                  <Text className="text-xs text-gray-500 mb-1 text-center">{shortName(team1Name)}</Text>
                   <TextInput
-                    className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white mr-2"
+                    className="border border-gray-300 rounded-lg p-4 text-2xl text-center text-gray-900 bg-white font-bold"
                     keyboardType="numeric"
-                    value={g.p1}
-                    onChangeText={(t) => {
-                      const v = t.replace(/[^0-9]/g, "");
-                      setGames((arr) => arr.map((it, i) => i === idx ? { ...it, p1: v } : it));
-                    }}
-                    placeholder={shortName(p1Name)}
-                    placeholderTextColor="#9CA3AF"
-                  />
-                  <Text className="mx-1">-</Text>
-                  <TextInput
-                    className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white ml-2"
-                    keyboardType="numeric"
-                    value={g.p2}
+                    value={games[0]?.p1 || ""}
                     editable={canEditScore}
                     onChangeText={(t) => {
                       const v = t.replace(/[^0-9]/g, "");
-                      setGames((arr) => arr.map((it, i) => i === idx ? { ...it, p2: v } : it));
+                      setGames((arr) => {
+                        if (arr.length === 0) return [{ p1: v, p2: "" }];
+                        return arr.map((it, i) => i === 0 ? { ...it, p1: v } : it);
+                      });
                     }}
-                    placeholder={shortName(p2Name)}
+                    placeholder="0"
                     placeholderTextColor="#9CA3AF"
                   />
-                  <TouchableOpacity
-                    className="ml-2 px-3 py-2 rounded-lg border border-red-300"
-                    disabled={!canEditScore}
-                    onPress={canEditScore ? () => setGames((arr) => arr.filter((_, i) => i !== idx)) : undefined}
-                  >
-                    <Text className="text-red-700">Remove</Text>
-                  </TouchableOpacity>
                 </View>
-              ))}
-              <View className="mb-4">
-                <TouchableOpacity
-                  className="px-3 py-2 rounded-lg border border-gray-300 self-start"
-                  disabled={!canEditScore}
-                  onPress={canEditScore ? () => setGames((arr) => [...arr, { p1: "", p2: "" }]) : undefined}
-                >
-                  <Text className="text-gray-800">Add Game</Text>
-                </TouchableOpacity>
+                <Text className="mx-4 text-2xl font-bold text-gray-400">-</Text>
+                <View className="flex-1">
+                  <Text className="text-xs text-gray-500 mb-1 text-center">{shortName(team2Name)}</Text>
+                  <TextInput
+                    className="border border-gray-300 rounded-lg p-4 text-2xl text-center text-gray-900 bg-white font-bold"
+                    keyboardType="numeric"
+                    value={games[0]?.p2 || ""}
+                    editable={canEditScore}
+                    onChangeText={(t) => {
+                      const v = t.replace(/[^0-9]/g, "");
+                      setGames((arr) => {
+                        if (arr.length === 0) return [{ p1: "", p2: v }];
+                        return arr.map((it, i) => i === 0 ? { ...it, p2: v } : it);
+                      });
+                    }}
+                    placeholder="0"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
               </View>
 
+              {/* Winner */}
               <Text className="text-base font-semibold text-gray-900 mb-2">Winner</Text>
-              <View className="flex-row justify-between -mb-1">
-                <Text className="text-xs text-gray-500">Left</Text>
-                <Text className="text-xs text-gray-500">Right</Text>
-              </View>
-              <View className="flex-row mb-4 mt-1">
+              <View className="flex-row mb-4">
                 <TouchableOpacity
-                  className={`px-3 py-2 rounded-l-lg border ${winner === 1 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  className={`flex-1 py-3 rounded-l-lg border ${winner === 1 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
                   disabled={!canEditScore}
                   onPress={canEditScore ? () => setWinner(1) : undefined}
                 >
-                  <Text className={winner === 1 ? 'text-white' : 'text-gray-800'} numberOfLines={1}>{shortName(p1Name)}</Text>
+                  <Text className={`text-center font-medium ${winner === 1 ? 'text-white' : 'text-gray-800'}`} numberOfLines={1}>
+                    {shortName(team1Name)}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className={`px-3 py-2 border ${winner === 0 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  className={`px-4 py-3 border-t border-b ${winner === 0 ? 'bg-gray-600 border-gray-600' : 'border-gray-300'}`}
                   disabled={!canEditScore}
                   onPress={canEditScore ? () => setWinner(0) : undefined}
                 >
-                  <Text className={winner === 0 ? 'text-white' : 'text-gray-800'}>None</Text>
+                  <Text className={`text-center ${winner === 0 ? 'text-white' : 'text-gray-500'}`}>Draw</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className={`px-3 py-2 rounded-r-lg border ${winner === 2 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}
+                  className={`flex-1 py-3 rounded-r-lg border ${winner === 2 ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}
                   disabled={!canEditScore}
                   onPress={canEditScore ? () => setWinner(2) : undefined}
                 >
-                  <Text className={winner === 2 ? 'text-white' : 'text-gray-800'} numberOfLines={1}>{shortName(p2Name)}</Text>
+                  <Text className={`text-center font-medium ${winner === 2 ? 'text-white' : 'text-gray-800'}`} numberOfLines={1}>
+                    {shortName(team2Name)}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
               <Text className="text-base font-semibold text-gray-900 mb-2">Schedule</Text>
-              <>
-                <View className="mb-3">
-                  <Text className="text-sm text-gray-700 mb-1">Date</Text>
+              <View className="mb-3">
+                <Text className="text-sm text-gray-700 mb-1">Time</Text>
+                <View className="flex-row items-center">
                   <TouchableOpacity
-                    className="border border-gray-300 rounded-lg p-3 bg-white"
+                    className="flex-1 border border-gray-300 rounded-lg p-3 bg-white"
                     disabled={!canEditSchedule}
                     onPress={() => {
                       if (!canEditSchedule) return;
-                      if (Platform.OS === "web") openCalendarForSchedule();
-                      else setShowDatePicker(true);
+                      if (Platform.OS === "web") openWebTimePicker();
+                      else setShowTimePicker(true);
                     }}
                   >
-                    <Text className={dateStr ? "text-gray-900" : "text-gray-400"}>{dateStr || "Pick date"}</Text>
+                    <Text className={timeStr ? "text-gray-900" : "text-gray-400"}>{timeStr || "Pick time"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200"
+                    disabled={!canEditSchedule}
+                    onPress={canEditSchedule ? setNow : undefined}
+                  >
+                    <Text className="text-gray-800">Now</Text>
                   </TouchableOpacity>
                 </View>
-                <View className="mb-3">
-                  <Text className="text-sm text-gray-700 mb-1">Time</Text>
-                  <View className="flex-row items-center">
-                    <TouchableOpacity
-                      className="flex-1 border border-gray-300 rounded-lg p-3 bg-white"
-                      disabled={!canEditSchedule}
-                      onPress={() => {
-                        if (!canEditSchedule) return;
-                        if (Platform.OS === "web") openWebTimePicker();
-                        else setShowTimePicker(true);
-                      }}
-                    >
-                      <Text className={timeStr ? "text-gray-900" : "text-gray-400"}>{timeStr || "Pick time"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200"
-                      disabled={!canEditSchedule}
-                      onPress={canEditSchedule ? setNow : undefined}
-                    >
-                      <Text className="text-gray-800">Now</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+              </View>
 
-                {showDatePicker && Platform.OS !== "web" && (
-                  <DateTimePicker
-                    mode="date"
-                    display="default"
-                    value={parseDMY(dateStr || "") || new Date()}
-                    onChange={(_, selectedDate) => {
-                      setShowDatePicker(false);
-                      if (!selectedDate) return;
-                      setDateStr(toDMY(selectedDate));
-                    }}
-                  />
-                )}
-
-                {showTimePicker && Platform.OS !== "web" && (
-                  <DateTimePicker
-                    mode="time"
-                    display="default"
-                    value={(() => {
-                      const base = parseDMY(dateStr || "") || new Date();
-                      const parsedTime = parseTime12(timeStr || "");
-                      if (parsedTime) {
-                        base.setHours(parsedTime.hours24, parsedTime.minutes, 0, 0);
-                      }
-                      return base;
-                    })()}
-                    onChange={(_, selectedDate) => {
-                      setShowTimePicker(false);
-                      if (!selectedDate) return;
-                      setTimeStr(toHM12(selectedDate));
-                    }}
-                  />
-                )}
-              </>
+              {showTimePicker && Platform.OS !== "web" && (
+                <DateTimePicker
+                  mode="time"
+                  display="default"
+                  value={(() => {
+                    const base = new Date();
+                    const parsedTime = parseTime12(timeStr || "");
+                    if (parsedTime) {
+                      base.setHours(parsedTime.hours24, parsedTime.minutes, 0, 0);
+                    }
+                    return base;
+                  })()}
+                  onChange={(_, selectedDate) => {
+                    setShowTimePicker(false);
+                    if (!selectedDate) return;
+                    setTimeStr(toHM12(selectedDate));
+                  }}
+                />
+              )}
 
               <View className="mb-4">
                 <Text className="text-base font-semibold text-gray-900 mb-2">Court</Text>
@@ -748,6 +871,67 @@ export default function HostMatchDetail() {
                   </TouchableOpacity>
                 </View>
               </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Player Picker Modal */}
+      {showPlayerPicker && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setShowPlayerPicker(null)}>
+          <View className="flex-1 bg-black/40 items-center justify-center px-4">
+            <View className="w-full max-w-sm bg-white rounded-xl p-4">
+              <Text className="text-lg font-semibold mb-3">
+                Select Player {showPlayerPicker.position + 1} for {showPlayerPicker.team === 1 ? team1Name : team2Name}
+              </Text>
+              <ScrollView className="max-h-80">
+                {(showPlayerPicker.team === 1 ? team1Members : team2Members).map((member) => {
+                  const isSelected = showPlayerPicker.team === 1 
+                    ? team1Players[showPlayerPicker.position] === member.profile_id
+                    : team2Players[showPlayerPicker.position] === member.profile_id;
+                  const isUsedElsewhere = showPlayerPicker.team === 1
+                    ? team1Players.some((p, i) => p === member.profile_id && i !== showPlayerPicker.position)
+                    : team2Players.some((p, i) => p === member.profile_id && i !== showPlayerPicker.position);
+                  
+                  return (
+                    <TouchableOpacity
+                      key={member.profile_id}
+                      className={`p-3 rounded-lg mb-2 border ${
+                        isSelected ? 'bg-blue-100 border-blue-400' : 
+                        isUsedElsewhere ? 'bg-gray-100 border-gray-200' : 'border-gray-200'
+                      }`}
+                      disabled={isUsedElsewhere}
+                      onPress={() => {
+                        if (showPlayerPicker.team === 1) {
+                          setTeam1Players((prev) => {
+                            const next = [...prev];
+                            next[showPlayerPicker.position] = member.profile_id;
+                            return next;
+                          });
+                        } else {
+                          setTeam2Players((prev) => {
+                            const next = [...prev];
+                            next[showPlayerPicker.position] = member.profile_id;
+                            return next;
+                          });
+                        }
+                        setShowPlayerPicker(null);
+                      }}
+                    >
+                      <Text className={`text-sm ${isUsedElsewhere ? 'text-gray-400' : 'text-gray-900'}`}>
+                        {member.display_name}
+                        {isUsedElsewhere ? ' (already selected)' : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <TouchableOpacity 
+                className="mt-3 py-3 rounded-lg border border-gray-300" 
+                onPress={() => setShowPlayerPicker(null)}
+              >
+                <Text className="text-center text-gray-700">Cancel</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
