@@ -322,7 +322,7 @@ export default function HostMatchDetail() {
         if (rawMsg.includes("Session 2 match cannot start before Session 1 matches")) {
           toast.show({
             type: "error",
-            message: "XD / RD (Session 2) must be scheduled at or after the MD / WD (Session 1) matches for this fixture.",
+            message: "XD / Singles (Session 2) must be scheduled at or after the MD / WD (Session 1) matches for this fixture.",
           });
           return;
         }

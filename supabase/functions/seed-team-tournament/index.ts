@@ -345,7 +345,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         // MD: P1, P2
         // WD: P3, P4
         // XD: P5, P6
-        // RD: P1, P3 (One from MD, One from WD)
+        // S (Singles): P1 (any team member can play singles)
         const slots = [
             { code: 'MD', pid: teamMemberIds[0] },
             { code: 'MD', pid: teamMemberIds[1] },
@@ -353,8 +353,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             { code: 'WD', pid: teamMemberIds[3] },
             { code: 'XD', pid: teamMemberIds[4] },
             { code: 'XD', pid: teamMemberIds[5] },
-            { code: 'RD', pid: teamMemberIds[0] }, // from MD
-            { code: 'RD', pid: teamMemberIds[2] }, // from WD
+            { code: 'S', pid: teamMemberIds[0] }, // Singles - any team member
         ];
 
         for (const s of slots) {

@@ -162,7 +162,7 @@ export default function FixturesByCategory() {
 
       setEntryNames(flat);
 
-      // Load roster slots for these entries to resolve MD/WD/XD/RD pairs
+      // Load roster slots for these entries to resolve MD/WD/XD/S pairs
       const { data: rosterRows } = await supabase
         .from("entry_roster_slots")
         .select("entry_id, profile_id, slot_code")

@@ -279,6 +279,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         for (const fix of (insertedFixtures as any[])) {
           if (fix.status !== 'scheduled') continue;
 
+          // Create sub-matches for each fixture
+          // MD (Men's Doubles), WD (Women's Doubles) in session 1
+          // XD (Mixed Doubles), S (Singles) in session 2
+          // Note: Player assignments are NOT auto-generated here.
+          // Team captains will assign players to each sub-match via match_player_assignments table.
           subMatchesToInsert.push({
             tournament_id: (cat as CategoryRow).tournament_id,
             category_id: categoryId,
@@ -318,7 +323,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             round_number: fix.round_number,
             index_in_round: ++matchIndexCounter,
             fixture_id: fix.id,
-            sub_match_type: 'RD',
+            sub_match_type: 'S',
             session_sequence: 2,
             status: 'pending',
           });

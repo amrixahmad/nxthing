@@ -119,7 +119,7 @@ export default function ManageCategories() {
 
   const templates = useMemo(
     () => [
-      { label: "Club Team Tie (6 players)", p: "team" as const, n: "Club Team Tie", teamMin: 6, teamMax: 6 },
+      { label: "Club Team Tie (6-10 players)", p: "team" as const, n: "Club Team Tie", teamMin: 6, teamMax: 10 },
       { label: "Team Doubles (2 players)", p: "team" as const, n: "Team Doubles", teamMin: 2, teamMax: 2 },
       { label: "Men's Doubles", p: "doubles" as const, n: "Men's Doubles", teamMin: 2, teamMax: 2 },
       { label: "Women's Doubles", p: "doubles" as const, n: "Women's Doubles", teamMin: 2, teamMax: 2 },

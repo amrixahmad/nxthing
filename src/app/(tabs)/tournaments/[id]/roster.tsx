@@ -14,7 +14,7 @@ type Member = {
 type RosterSlot = {
   id: number;
   profile_id: string;
-  slot_code: "MD" | "WD" | "XD" | "RD";
+  slot_code: "MD" | "WD" | "XD" | "S";
   profile?: {
     display_name: string | null;
   };
@@ -29,7 +29,7 @@ export default function RosterManagement() {
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<Member[]>([]);
   const [roster, setRoster] = useState<RosterSlot[]>([]);
-  const [selectingFor, setSelectingFor] = useState<"MD" | "WD" | "XD" | "RD" | null>(null);
+  const [selectingFor, setSelectingFor] = useState<"MD" | "WD" | "XD" | "S" | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -140,9 +140,9 @@ export default function RosterManagement() {
     return members.find(m => m.profile_id === pid)?.display_name || "Unknown";
   }
 
-  function renderSlotSection(code: "MD" | "WD" | "XD" | "RD", title: string, subtitle: string) {
+  function renderSlotSection(code: "MD" | "WD" | "XD" | "S", title: string, subtitle: string, maxPlayers: number = 2) {
     const assigned = roster.filter(r => r.slot_code === code);
-    const isFull = assigned.length >= 2;
+    const isFull = assigned.length >= maxPlayers;
 
     return (
       <View className="bg-white p-4 rounded-xl border border-gray-200 mb-4">
@@ -152,7 +152,7 @@ export default function RosterManagement() {
                 <Text className="text-xs text-gray-500">{subtitle}</Text>
             </View>
             <Text className={`text-xs font-semibold px-2 py-1 rounded ${isFull ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                {assigned.length}/2
+                {assigned.length}/{maxPlayers}
             </Text>
         </View>
 
@@ -190,6 +190,11 @@ export default function RosterManagement() {
     );
   }
 
+  // Get max players for a slot code
+  function getMaxPlayersForSlot(code: "MD" | "WD" | "XD" | "S"): number {
+    return code === 'S' ? 1 : 2;
+  }
+
   // Filter eligible players for the modal
   const eligibleMembers = members.filter(m => {
       if (!selectingFor) return false;
@@ -198,28 +203,8 @@ export default function RosterManagement() {
       const inSlot = roster.some(r => r.slot_code === selectingFor && r.profile_id === m.profile_id);
       if (inSlot) return false;
 
-      // Specific RD constraints handled by Backend, but we can filter for better UX
-      if (selectingFor === 'RD') {
-          // Must be in MD or WD
-          const inMD = roster.some(r => r.slot_code === 'MD' && r.profile_id === m.profile_id);
-          const inWD = roster.some(r => r.slot_code === 'WD' && r.profile_id === m.profile_id);
-          if (!inMD && !inWD) return false;
-
-          // Cannot be in XD (Strictly enforced by DB, but we can filter too)
-          const inXD = roster.some(r => r.slot_code === 'XD' && r.profile_id === m.profile_id);
-          if (inXD) return false;
-      }
-      
-      // For MD/WD/XD, check if they are already in RD?
-      if (['MD', 'WD'].includes(selectingFor)) {
-          // No restriction on MD/WD players being in RD.
-      }
-      
-      if (selectingFor === 'XD') {
-          // Cannot be in RD
-          const inRD = roster.some(r => r.slot_code === 'RD' && r.profile_id === m.profile_id);
-          if (inRD) return false;
-      }
+      // Singles (S) has no special constraints - any team member can play
+      // All other slots (MD, WD, XD) also have no cross-slot restrictions now
 
       return true;
   });
@@ -230,8 +215,8 @@ export default function RosterManagement() {
       
       <ScrollView className="flex-1 px-4 pt-4">
         <Text className="text-sm text-gray-600 mb-4">
-            Assign exactly 6 players to the positions below. 
-            The Wildcard pair must be formed by one player from the Men's Doubles pair and one from the Women's Doubles pair.
+            Assign players to the positions below. Teams can have 6-10 players.
+            Players can be assigned to multiple match types.
         </Text>
 
         {errorMsg && (
@@ -244,10 +229,10 @@ export default function RosterManagement() {
             <ActivityIndicator size="large" color="#4F46E5" />
         ) : (
             <>
-                {renderSlotSection("MD", "Men's Doubles", "2 Players")}
-                {renderSlotSection("WD", "Women's Doubles", "2 Players")}
-                {renderSlotSection("XD", "Mixed Doubles", "2 Players")}
-                {renderSlotSection("RD", "Wildcard (Reverse)", "1 MD + 1 WD Player")}
+                {renderSlotSection("MD", "Men's Doubles", "2 Players", 2)}
+                {renderSlotSection("WD", "Women's Doubles", "2 Players", 2)}
+                {renderSlotSection("XD", "Mixed Doubles", "2 Players", 2)}
+                {renderSlotSection("S", "Singles", "1 Player", 1)}
                 
                 <View className="h-10" />
             </>
@@ -265,7 +250,7 @@ export default function RosterManagement() {
             <View className="bg-white rounded-t-3xl p-5 h-2/3">
                 <View className="flex-row justify-between items-center mb-4">
                     <Text className="text-xl font-bold text-gray-900">
-                        Select for {selectingFor}
+                        Select for {selectingFor === 'S' ? 'Singles' : selectingFor}
                     </Text>
                     <TouchableOpacity onPress={() => setSelectingFor(null)}>
                         <Ionicons name="close" size={24} color="#6B7280" />
@@ -276,7 +261,6 @@ export default function RosterManagement() {
                     <View className="items-center justify-center flex-1">
                         <Text className="text-gray-500 text-center px-10">
                             No eligible players found for this slot.
-                            {selectingFor === 'RD' && "\n\n(Remember: Wildcard players must first be assigned to MD or WD)"}
                         </Text>
                     </View>
                 ) : (
