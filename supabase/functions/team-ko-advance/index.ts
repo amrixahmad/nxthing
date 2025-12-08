@@ -202,20 +202,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq("stage", "knockout");
     if (ufErr) throw ufErr;
 
-    // Re-fetch matches to check which fixtures have sub-matches
-    const updatedFixtureIds = (updatedFixtures as FixtureRow[]).map((f) => f.id);
-    const { data: updatedMatches, error: umErr } = await supabase
-      .from("matches")
-      .select("id, fixture_id")
-      .eq("category_id", categoryId)
-      .in("fixture_id", updatedFixtureIds);
-    if (umErr) throw umErr;
+    const updatedFixturesList = (updatedFixtures as FixtureRow[]) || [];
+    const updatedFixtureIds = updatedFixturesList.map((f) => f.id);
 
-    const updatedMatchesByFixture: Record<number, any[]> = {};
-    for (const m of (updatedMatches as any[]) || []) {
-      if (!m.fixture_id) continue;
-      if (!updatedMatchesByFixture[m.fixture_id]) updatedMatchesByFixture[m.fixture_id] = [];
-      updatedMatchesByFixture[m.fixture_id].push(m);
+    // Re-fetch matches to check which fixtures have sub-matches
+    let updatedMatchesByFixture: Record<number, any[]> = {};
+    
+    if (updatedFixtureIds.length > 0) {
+      const { data: updatedMatches, error: umErr } = await supabase
+        .from("matches")
+        .select("id, fixture_id")
+        .eq("category_id", categoryId)
+        .in("fixture_id", updatedFixtureIds);
+      if (umErr) throw umErr;
+
+      for (const m of (updatedMatches as any[]) || []) {
+        if (!m.fixture_id) continue;
+        if (!updatedMatchesByFixture[m.fixture_id]) updatedMatchesByFixture[m.fixture_id] = [];
+        updatedMatchesByFixture[m.fixture_id].push(m);
+      }
     }
 
     // Create sub-matches for any fixture that has both teams but no sub-matches
@@ -269,8 +274,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     );
   } catch (err) {
-    console.error(err);
-    return new Response(JSON.stringify({ error: "Internal error" }), {
+    console.error("team-ko-advance error:", err);
+    const errorMessage = (err as any)?.message || String(err) || "Internal error";
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

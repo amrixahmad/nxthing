@@ -170,7 +170,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           groups.push(shuffled.slice(i, i + groupSize));
         }
 
-        const groupRounds: { t1: number | null; t2: number | null }[][] = [];
+        const groupRounds: { t1: number | null; t2: number | null }[][][] = [];
         let maxRounds = 0;
 
         for (let g = 0; g < groups.length; g++) {
@@ -448,8 +448,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error(err);
-    return new Response(JSON.stringify({ error: "Internal error" }), {
+    console.error("generate-bracket error:", err);
+    const errorMessage = (err as any)?.message || String(err) || "Internal error";
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
