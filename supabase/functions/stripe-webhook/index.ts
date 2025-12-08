@@ -130,7 +130,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
           } else {
             // Member-level paid update (idempotent)
             if (profileId) {
-              await supabase
+              console.log("Webhook: updating entry_members for", { entryId, profileId });
+              const { error: memUpdateErr } = await supabase
                 .from("entry_members")
                 .update({
                   payment_status: "paid",
@@ -142,14 +143,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
                 .eq("entry_id", entryId)
                 .eq("profile_id", profileId)
                 .in("payment_status", ["unpaid", "waived"]);
+              
+              if (memUpdateErr) {
+                console.error("Webhook: failed to update entry_members", memUpdateErr);
+              } else {
+                console.log("Webhook: entry_members updated successfully");
+              }
 
-              // Check if team is fully paid -> accept entry and mark entry as paid
+              // Check if team has minimum required paid members -> accept entry and mark entry as paid
               const { data: cat } = await supabase
                 .from("tournament_categories")
-                .select("members_per_team_max")
+                .select("members_per_team_min, members_per_team_max")
                 .eq("id", entry.category_id)
                 .maybeSingle();
-              const maxMembers = Number(cat?.members_per_team_max || 1);
+              // Use minimum required members (default to 1 if not set)
+              const minMembers = Number(cat?.members_per_team_min || 1);
 
               const { count: paidCount } = await supabase
                 .from("entry_members")
@@ -157,19 +165,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
                 .eq("entry_id", entryId)
                 .eq("payment_status", "paid");
 
-              if (maxMembers && typeof paidCount === "number" && paidCount >= maxMembers) {
-                await supabase
+              console.log("Webhook: checking team completion", { entryId, minMembers, paidCount });
+
+              if (minMembers && typeof paidCount === "number" && paidCount >= minMembers) {
+                console.log("Webhook: team fully paid, marking entry as paid and accepted");
+                const { error: entryPaidErr } = await supabase
                   .from("entries")
                   .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
                   .eq("id", entryId)
                   .in("payment_status", ["unpaid", "waived"]);
-                await supabase
+                if (entryPaidErr) console.error("Webhook: failed to mark entry paid", entryPaidErr);
+                
+                const { error: entryAcceptErr } = await supabase
                   .from("entries")
                   .update({ status: "accepted" })
                   .eq("id", entryId)
                   .eq("status", "pending");
+                if (entryAcceptErr) console.error("Webhook: failed to accept entry", entryAcceptErr);
               } else {
                 // Always store the latest reference
+                console.log("Webhook: team not fully paid yet, storing reference");
                 await supabase
                   .from("entries")
                   .update({ payment_reference: session.id })
@@ -177,11 +192,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
               }
             } else {
               // Fallback to entry-level update if no profile_id (legacy behavior)
-              await supabase
+              console.log("Webhook: no profile_id, using legacy entry-level update");
+              const { error: legacyErr } = await supabase
                 .from("entries")
                 .update({ payment_status: "paid", paid_at: new Date().toISOString(), payment_reference: session.id })
                 .eq("id", entryId)
                 .in("payment_status", ["unpaid", "waived"]);
+              if (legacyErr) console.error("Webhook: legacy update failed", legacyErr);
+              
               await supabase
                 .from("entries")
                 .update({ status: "accepted" })

@@ -15,10 +15,14 @@ type EntryRow = {
   team_name: string | null;
   role: "captain" | "player";
   created_at: string | null;
+  // Individual member payment status (for the current user)
+  myPaymentStatus?: string | null;
   category: {
     id: number;
     name?: string | null;
     participation_type?: string | null;
+    members_per_team_min?: number | null;
+    members_per_team_max?: number | null;
     tournament?: {
       id: number;
       title?: string | null;
@@ -27,6 +31,9 @@ type EntryRow = {
       registration_end_date?: string | null;
     } | null;
   } | null;
+  // Team member stats
+  paidMembersCount?: number;
+  totalMembersCount?: number;
 };
 
 export default function MyEntries() {
@@ -48,25 +55,27 @@ export default function MyEntries() {
       .from("entries")
       .select(
         `id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
-         category:category_id ( id, name, participation_type, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
+         category:category_id ( id, name, participation_type, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
       )
       .eq("created_by", userId);
 
     const { data: memberRows, error: memberErr } = await supabase
       .from("entry_members")
       .select(
-        `entry_id,
+        `entry_id, payment_status,
          entry:entry_id (
            id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
-           category:category_id ( id, name, participation_type, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )
+           category:category_id ( id, name, participation_type, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )
          )`
       )
       .eq("profile_id", userId);
 
     if (!createdErr && !memberErr) {
       const byId: Record<number, EntryRow> = {};
+      // Track user's individual payment status per entry
+      const myPaymentByEntry: Record<number, string | null> = {};
 
-      function upsert(raw: any, role: "captain" | "player") {
+      function upsert(raw: any, role: "captain" | "player", myPaymentStatus?: string | null) {
         if (!raw) return;
         const cat = Array.isArray(raw.category) ? raw.category[0] : raw.category;
         const t = cat?.tournament;
@@ -81,11 +90,14 @@ export default function MyEntries() {
           team_name: raw.team_name ?? null,
           created_at: raw.created_at ?? null,
           role,
+          myPaymentStatus: myPaymentStatus ?? myPaymentByEntry[raw.id as number] ?? null,
           category: cat
             ? {
                 id: cat.id,
                 name: cat.name ?? null,
                 participation_type: cat.participation_type ?? null,
+                members_per_team_min: cat.members_per_team_min ?? null,
+                members_per_team_max: cat.members_per_team_max ?? null,
                 tournament: tour
                   ? {
                       id: tour.id,
@@ -102,6 +114,10 @@ export default function MyEntries() {
         if (!existing || (existing.role !== "captain" && role === "captain")) {
           byId[next.id] = next;
         }
+        // Always update myPaymentStatus if provided
+        if (myPaymentStatus && byId[next.id]) {
+          byId[next.id].myPaymentStatus = myPaymentStatus;
+        }
       }
 
       ((createdRows as any[]) || []).forEach((r) => {
@@ -113,8 +129,37 @@ export default function MyEntries() {
         if (Array.isArray(e)) e = e[0];
         if (!e) return;
         const isCreator = e.created_by === userId;
-        upsert(e, isCreator ? "captain" : "player");
+        const memberPaymentStatus = m.payment_status || null;
+        myPaymentByEntry[e.id as number] = memberPaymentStatus;
+        upsert(e, isCreator ? "captain" : "player", memberPaymentStatus);
       });
+
+      // Fetch team member counts for each entry
+      const entryIds = Object.keys(byId).map(Number);
+      if (entryIds.length > 0) {
+        const { data: allMembers } = await supabase
+          .from("entry_members")
+          .select("entry_id, payment_status")
+          .in("entry_id", entryIds);
+        
+        if (allMembers) {
+          const countsByEntry: Record<number, { total: number; paid: number }> = {};
+          allMembers.forEach((m: any) => {
+            const eid = m.entry_id as number;
+            if (!countsByEntry[eid]) countsByEntry[eid] = { total: 0, paid: 0 };
+            countsByEntry[eid].total++;
+            if (m.payment_status === "paid") countsByEntry[eid].paid++;
+          });
+          
+          Object.keys(byId).forEach((idStr) => {
+            const id = Number(idStr);
+            if (countsByEntry[id]) {
+              byId[id].totalMembersCount = countsByEntry[id].total;
+              byId[id].paidMembersCount = countsByEntry[id].paid;
+            }
+          });
+        }
+      }
 
       const merged = Object.values(byId).sort((a, b) => {
         const ad = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -269,15 +314,50 @@ export default function MyEntries() {
                     <Text className="text-sm text-gray-800">{e.status}</Text>
                   </View>
                   <View className="mr-4">
-                    <Text className="text-xs text-gray-500">Payment</Text>
+                    <Text className="text-xs text-gray-500">Team Payment</Text>
                     <Text className="text-sm text-gray-800">{e.payment_status}</Text>
                   </View>
                 </View>
+
+                {/* Individual payment status for team entries */}
+                {pType === "team" && (
+                  <View className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-xs font-medium text-gray-700">Your Payment</Text>
+                      <View className={`px-2 py-0.5 rounded ${e.myPaymentStatus === "paid" ? "bg-green-100" : "bg-yellow-100"}`}>
+                        <Text className={`text-xs font-medium ${e.myPaymentStatus === "paid" ? "text-green-700" : "text-yellow-700"}`}>
+                          {e.myPaymentStatus === "paid" ? "✓ You Paid" : "Unpaid"}
+                        </Text>
+                      </View>
+                    </View>
+                    {e.totalMembersCount != null && e.paidMembersCount != null && (
+                      <View className="mt-2">
+                        <Text className="text-xs text-gray-600">
+                          Team Progress: {e.paidMembersCount}/{e.totalMembersCount} members paid
+                          {e.category?.members_per_team_min && e.paidMembersCount < e.category.members_per_team_min && (
+                            ` (need ${e.category.members_per_team_min} min)`
+                          )}
+                        </Text>
+                        <View className="mt-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <View 
+                            className="h-full bg-green-500 rounded-full" 
+                            style={{ width: `${Math.min(100, (e.paidMembersCount / (e.category?.members_per_team_min || e.totalMembersCount)) * 100)}%` }}
+                          />
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 <View className="flex-row items-center justify-between mt-4">
                   <Text className="text-gray-900 font-semibold">
                     {amount ? `${currency} ${amount.toFixed(2)}` : ""}
                   </Text>
-                  {canPay ? (
+                  {e.myPaymentStatus === "paid" ? (
+                    <View className="px-3 py-2 rounded-lg bg-green-100">
+                      <Text className="text-green-800">✓ Paid</Text>
+                    </View>
+                  ) : canPay ? (
                     <TouchableOpacity
                       className={`rounded-lg py-2 px-4 ${(invoking === e.id || !isOpen) ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                       onPress={() => pay(e.id)}
