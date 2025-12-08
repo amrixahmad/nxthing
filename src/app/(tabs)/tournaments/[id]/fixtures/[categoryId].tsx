@@ -674,6 +674,8 @@ export default function FixturesByCategory() {
         );
         const hasPending = roundFixtures.some((f) => {
           const subs = matchesByFixture[f.id] || [];
+          // If no sub-matches exist yet, consider it pending
+          if (subs.length === 0) return true;
           return subs.some(
             (m) =>
               m.status !== "completed" ||
@@ -695,6 +697,16 @@ export default function FixturesByCategory() {
       const fixturesThisRound = koFixtures.filter(
         (f) => f.round_number === currentRound
       );
+
+      // Check if any fixtures in this round have no sub-matches
+      const fixturesWithoutMatches = fixturesThisRound.filter(
+        (f) => f.entry1_id != null && f.entry2_id != null && (matchesByFixture[f.id] || []).length === 0
+      );
+      if (fixturesWithoutMatches.length > 0) {
+        alert("Some knockout fixtures don't have sub-matches yet. Please regenerate the knockout stage or contact support.");
+        setLoading(false);
+        return;
+      }
 
       for (const f of fixturesThisRound) {
         if (f.entry1_id == null || f.entry2_id == null) continue;

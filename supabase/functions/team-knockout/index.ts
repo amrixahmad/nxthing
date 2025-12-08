@@ -486,7 +486,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         round_number: fix.round_number,
         index_in_round: ++matchIndexCounter,
         fixture_id: fix.id,
-        sub_match_type: "RD",
+        sub_match_type: "S",
         session_sequence: 2,
         status: "pending",
       });
