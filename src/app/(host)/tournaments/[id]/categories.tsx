@@ -97,6 +97,7 @@ export default function ManageCategories() {
   const [regEndTime, setRegEndTime] = useState("");
   const [errRegStart, setErrRegStart] = useState<string | null>(null);
   const [errRegEnd, setErrRegEnd] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   // Time picker state (native)
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -224,14 +225,18 @@ export default function ManageCategories() {
 
   async function addCategory(opts?: { teamMin?: number; teamMax?: number }) {
     try {
-      if (!session?.user) return;
+      setCategoryError(null);
+      if (!session?.user) {
+        setCategoryError("You must be signed in to add a category.");
+        return;
+      }
       if (!name.trim()) {
-        Alert.alert("Name required");
+        setCategoryError("Category name is required.");
         return;
       }
       const regFee = Number(fee) || 0;
       if (regFee < 1) {
-        Alert.alert("Minimum fee is RM 1");
+        setCategoryError("Minimum registration fee is RM 1.");
         return;
       }
       setSaving(true);
@@ -240,7 +245,7 @@ export default function ManageCategories() {
       const trimmedName = name.trim().toLowerCase();
       const exists = items.some((c) => c.name.toLowerCase() === trimmedName);
       if (exists) {
-        Alert.alert("Category exists", "A category with this name already exists in this tournament.");
+        setCategoryError("A category with this name already exists in this tournament.");
         setSaving(false);
         return;
       }
@@ -269,7 +274,9 @@ export default function ManageCategories() {
       await load();
       toast.show({ type: "success", message: "Category added" });
     } catch (e) {
-      if (e instanceof Error) Alert.alert("Error", e.message);
+      const msg = e instanceof Error ? e.message : "Failed to add category";
+      setCategoryError(msg);
+      if (Platform.OS !== "web") Alert.alert("Error", msg);
     } finally {
       setSaving(false);
     }
@@ -518,7 +525,7 @@ export default function ManageCategories() {
             <TextInput
               className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
               value={name}
-              onChangeText={setName}
+              onChangeText={(v) => { setName(v); setCategoryError(null); }}
               placeholder="e.g. Men's Singles 3.5–4.0"
               placeholderTextColor="#9CA3AF"
             />
@@ -567,6 +574,13 @@ export default function ManageCategories() {
           >
             <Text className={`text-center font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Add Category</Text>
           </TouchableOpacity>
+
+          {/* Error message display */}
+          {categoryError && (
+            <View className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200">
+              <Text className="text-red-800 text-sm">{categoryError}</Text>
+            </View>
+          )}
         </View>
 
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-4">
