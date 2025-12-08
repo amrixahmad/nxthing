@@ -182,9 +182,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    // Apply updates and create sub-matches for newly complete fixtures
+    // Apply updates first
     const fixtureIdsToUpdate = Object.keys(updatesByFixture).map((id) => Number(id));
-    let subMatchesCreated = 0;
 
     for (const fid of fixtureIdsToUpdate) {
       const payload = updatesByFixture[fid];
@@ -193,46 +192,70 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .update({ ...payload, status: "scheduled" })
         .eq("id", fid);
       if (uErr) throw uErr;
+    }
 
-      // Check if this fixture now has both teams assigned
-      const targetFixture = fixtures.find((f) => f.id === fid);
-      const newEntry1 = payload.entry1_id ?? targetFixture?.entry1_id;
-      const newEntry2 = payload.entry2_id ?? targetFixture?.entry2_id;
+    // Re-fetch all knockout fixtures to get updated entry IDs
+    const { data: updatedFixtures, error: ufErr } = await supabase
+      .from("fixtures")
+      .select("id, round_number, entry1_id, entry2_id, stage")
+      .eq("category_id", categoryId)
+      .eq("stage", "knockout");
+    if (ufErr) throw ufErr;
 
-      if (newEntry1 != null && newEntry2 != null) {
-        // Check if sub-matches already exist for this fixture
-        const existingSubs = matchesByFixture[fid] || [];
-        if (existingSubs.length === 0) {
-          // Create sub-matches for this fixture
-          const subMatchTypes = [
-            { type: "MD", session: 1 },
-            { type: "WD", session: 1 },
-            { type: "XD", session: 2 },
-            { type: "S", session: 2 },
-          ];
+    // Re-fetch matches to check which fixtures have sub-matches
+    const updatedFixtureIds = (updatedFixtures as FixtureRow[]).map((f) => f.id);
+    const { data: updatedMatches, error: umErr } = await supabase
+      .from("matches")
+      .select("id, fixture_id")
+      .eq("category_id", categoryId)
+      .in("fixture_id", updatedFixtureIds);
+    if (umErr) throw umErr;
 
-          const roundNum = targetFixture?.round_number || 0;
-          const subMatchesToInsert = subMatchTypes.map((sm, idx) => ({
-            tournament_id: (cat as CategoryRow).tournament_id,
-            category_id: categoryId,
-            round_number: roundNum,
-            index_in_round: idx + 1,
-            fixture_id: fid,
-            sub_match_type: sm.type,
-            session_sequence: sm.session,
-            status: "pending",
-            entry1_id: newEntry1,
-            entry2_id: newEntry2,
-          }));
+    const updatedMatchesByFixture: Record<number, any[]> = {};
+    for (const m of (updatedMatches as any[]) || []) {
+      if (!m.fixture_id) continue;
+      if (!updatedMatchesByFixture[m.fixture_id]) updatedMatchesByFixture[m.fixture_id] = [];
+      updatedMatchesByFixture[m.fixture_id].push(m);
+    }
 
-          const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
-          if (smErr) {
-            console.error("Error creating sub-matches for fixture", fid, smErr.message);
-          } else {
-            subMatchesCreated += subMatchesToInsert.length;
-          }
-        }
+    // Create sub-matches for any fixture that has both teams but no sub-matches
+    let subMatchesCreated = 0;
+    for (const f of (updatedFixtures as FixtureRow[]) || []) {
+      if (f.entry1_id == null || f.entry2_id == null) continue;
+      
+      const existingSubs = updatedMatchesByFixture[f.id] || [];
+      if (existingSubs.length > 0) continue;
+
+      // Create sub-matches for this fixture
+      const subMatchTypes = [
+        { type: "MD", session: 1 },
+        { type: "WD", session: 1 },
+        { type: "XD", session: 2 },
+        { type: "S", session: 2 },
+      ];
+
+      const subMatchesToInsert = subMatchTypes.map((sm, idx) => ({
+        tournament_id: (cat as CategoryRow).tournament_id,
+        category_id: categoryId,
+        round_number: f.round_number,
+        index_in_round: idx + 1,
+        fixture_id: f.id,
+        sub_match_type: sm.type,
+        session_sequence: sm.session,
+        status: "pending",
+        entry1_id: f.entry1_id,
+        entry2_id: f.entry2_id,
+      }));
+
+      const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
+      if (smErr) {
+        console.error("Error creating sub-matches for fixture", f.id, smErr.message);
+      } else {
+        subMatchesCreated += subMatchesToInsert.length;
       }
+
+      // Also update fixture status to scheduled
+      await supabase.from("fixtures").update({ status: "scheduled" }).eq("id", f.id);
     }
 
     return new Response(
