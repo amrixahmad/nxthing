@@ -395,20 +395,6 @@ export default function TournamentDetails() {
     }
   }
 
-  function goToInvite() {
-    const raw = inviteCode.trim();
-    if (!raw) {
-      setNotice("error");
-      setNoticeText("Enter an invite code to continue.");
-      return;
-    }
-    setNotice(null);
-    setNoticeText("");
-    const target = `/tournaments/register?invite=${encodeURIComponent(raw)}`;
-    setInviteCode("");
-    router.push(target as any);
-  }
-
   return (
     <ScrollView 
       className="flex-1 bg-gray-50"

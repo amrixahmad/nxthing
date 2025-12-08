@@ -52,6 +52,8 @@ export default function FixturesByCategory() {
   const [rosterByEntry, setRosterByEntry] = useState<Record<number, Record<string, string[]>>>({});
   const [refereeNames, setRefereeNames] = useState<Record<string, string>>({});
   const [organizerId, setOrganizerId] = useState<string | null>(null);
+  const [tournamentName, setTournamentName] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState<string | null>(null);
   const [isTeamFormat, setIsTeamFormat] = useState(false);
   const [activeTab, setActiveTab] = useState<"fixtures" | "leaderboard">("fixtures");
   const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null);
@@ -69,10 +71,15 @@ export default function FixturesByCategory() {
   async function load() {
     setLoading(true);
     
-    // Check category type
-    const { data: catData } = await supabase.from("tournament_categories").select("participation_type").eq("id", cid).single();
+    // Check category type and get category name
+    const { data: catData } = await supabase.from("tournament_categories").select("participation_type, name").eq("id", cid).single();
     const isTeam = (catData as any)?.participation_type === 'team';
     setIsTeamFormat(isTeam);
+    setCategoryName((catData as any)?.name || null);
+
+    // Get tournament name
+    const { data: tourData } = await supabase.from("tournaments").select("title").eq("id", tid).single();
+    setTournamentName((tourData as any)?.title || null);
 
     const { data: r } = await supabase
       .from("rounds")
@@ -889,6 +896,18 @@ export default function FixturesByCategory() {
       )}
 
       <ScrollView className="flex-1 px-4 pt-4">
+        {/* Tournament & Category Header */}
+        {(tournamentName || categoryName) && (
+          <View className="mb-4 p-4 bg-white rounded-xl border border-gray-200">
+            {tournamentName && (
+              <Text className="text-lg font-bold text-gray-900">{tournamentName}</Text>
+            )}
+            {categoryName && (
+              <Text className="text-sm text-gray-600 mt-1">{categoryName}</Text>
+            )}
+          </View>
+        )}
+
         {loading ? (
           <View className="items-center justify-center py-10"><ActivityIndicator /></View>
         ) : roundsSorted.length === 0 ? (
