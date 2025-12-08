@@ -182,19 +182,64 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    // Apply updates
+    // Apply updates and create sub-matches for newly complete fixtures
     const fixtureIdsToUpdate = Object.keys(updatesByFixture).map((id) => Number(id));
+    let subMatchesCreated = 0;
+
     for (const fid of fixtureIdsToUpdate) {
       const payload = updatesByFixture[fid];
       const { error: uErr } = await supabase
         .from("fixtures")
-        .update(payload)
+        .update({ ...payload, status: "scheduled" })
         .eq("id", fid);
       if (uErr) throw uErr;
+
+      // Check if this fixture now has both teams assigned
+      const targetFixture = fixtures.find((f) => f.id === fid);
+      const newEntry1 = payload.entry1_id ?? targetFixture?.entry1_id;
+      const newEntry2 = payload.entry2_id ?? targetFixture?.entry2_id;
+
+      if (newEntry1 != null && newEntry2 != null) {
+        // Check if sub-matches already exist for this fixture
+        const existingSubs = matchesByFixture[fid] || [];
+        if (existingSubs.length === 0) {
+          // Create sub-matches for this fixture
+          const subMatchTypes = [
+            { type: "MD", session: 1 },
+            { type: "WD", session: 1 },
+            { type: "XD", session: 2 },
+            { type: "S", session: 2 },
+          ];
+
+          const roundNum = targetFixture?.round_number || 0;
+          const subMatchesToInsert = subMatchTypes.map((sm, idx) => ({
+            tournament_id: (cat as CategoryRow).tournament_id,
+            category_id: categoryId,
+            round_number: roundNum,
+            index_in_round: idx + 1,
+            fixture_id: fid,
+            sub_match_type: sm.type,
+            session_sequence: sm.session,
+            status: "pending",
+            entry1_id: newEntry1,
+            entry2_id: newEntry2,
+          }));
+
+          const { error: smErr } = await supabase.from("matches").insert(subMatchesToInsert);
+          if (smErr) {
+            console.error("Error creating sub-matches for fixture", fid, smErr.message);
+          } else {
+            subMatchesCreated += subMatchesToInsert.length;
+          }
+        }
+      }
     }
 
     return new Response(
-      JSON.stringify({ ok: true, message: `Knockout bracket updated (${assignments} slots set)` }),
+      JSON.stringify({ 
+        ok: true, 
+        message: `Knockout bracket updated (${assignments} slots set, ${subMatchesCreated} sub-matches created)` 
+      }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
