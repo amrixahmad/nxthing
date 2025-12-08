@@ -64,8 +64,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               position: "absolute",
               left: 0,
               right: 0,
-              // Place near top, below any native header area
-              top: Platform.OS === "web" ? 12 : 12,
+              // Place near bottom, above any tab bar
+              bottom: Platform.OS === "web" ? 24 : 100,
               opacity,
               zIndex: 50,
             }}
