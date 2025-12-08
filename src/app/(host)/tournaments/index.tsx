@@ -108,27 +108,27 @@ export default function HostTournaments() {
                   </View>
                 </View>
                 <Text className="text-gray-600">Start: {fmt(t.start_date)}</Text>
-                <View className="mt-3 flex-row">
+                <View className="mt-3 flex-row flex-wrap gap-2">
                   <TouchableOpacity
-                    className="px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
                     onPress={() => router.push({ pathname: "/host/[id]/categories", params: { id: String(t.id) } } as any)}
                   >
-                    <Text className="text-gray-800">Manage Categories</Text>
+                    <Text className="text-gray-800 text-sm">Categories</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className="ml-2 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
                     onPress={() => router.push({ pathname: "/host/[id]/edit", params: { id: String(t.id) } } as any)}
                   >
-                    <Text className="text-gray-800">Edit</Text>
+                    <Text className="text-gray-800 text-sm">Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className="ml-2 px-4 py-3 rounded-lg border border-gray-300 active:bg-gray-50"
+                    className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
                     onPress={() => router.push({ pathname: "/host/[id]/referees", params: { id: String(t.id) } } as any)}
                   >
-                    <Text className="text-gray-800">Referees</Text>
+                    <Text className="text-gray-800 text-sm">Referees</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className="ml-2 px-4 py-3 rounded-lg border border-red-300 bg-red-50 active:bg-red-100"
+                    className="px-3 py-2 rounded-lg border border-red-300 bg-red-50 active:bg-red-100"
                     onPress={async () => {
                       const confirm = Platform.OS === "web" ? (typeof window !== "undefined" ? window.confirm("Delete this tournament? This cannot be undone.") : true) : undefined;
                       if (Platform.OS !== "web") {
@@ -153,7 +153,7 @@ export default function HostTournaments() {
                       }
                     }}
                   >
-                    <Text className="text-red-700">Delete</Text>
+                    <Text className="text-red-700 text-sm">Delete</Text>
                   </TouchableOpacity>
                 </View>
               </View>

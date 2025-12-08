@@ -441,7 +441,7 @@ export default function EditTournament() {
               <Text className="text-base font-medium text-gray-700 mb-2">Registration end time (h:mm AM/PM)</Text>
               <View className="flex-row items-center">
                 <TextInput
-                  className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  className="flex-1 border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
                   value={regEndTime}
                   onChangeText={(v) => { setRegEndTime(v); setErrRegEnd(null); }}
                   placeholder="h:mm AM/PM"
@@ -461,7 +461,7 @@ export default function EditTournament() {
           </View>
 
           <Text className="text-base font-medium text-gray-700 mb-2">Format</Text>
-          <View className="flex-row space-x-2">
+          <View className="flex-row flex-wrap gap-2">
             <TouchableOpacity
               className={`px-3 py-2 rounded-lg border ${format === "single_elimination" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
               onPress={() => setFormat("single_elimination")}

@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Modal, Platform } from "react-native";
-import { toDMY, toHM12, combineDateTime, parseTime12 } from "@/src/utils/datetime";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useToast } from "@/src/components/Toast";
 import { useSession } from "@/context/SessionProvider";
@@ -525,9 +523,9 @@ export default function ManageCategories() {
             <Text className="text-gray-700">No categories yet.</Text>
           ) : (
             items.map((c) => (
-              <View key={c.id} className="flex-row items-center justify-between py-3 border-b border-gray-100">
-                <View>
-                  <Text className="text-base text-gray-900">{c.name}</Text>
+              <View key={c.id} className="py-3 border-b border-gray-100">
+                <View className="mb-2">
+                  <Text className="text-base text-gray-900 font-medium">{c.name}</Text>
                   <Text className="text-xs text-gray-600">
                     {c.participation_type} • MYR {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}
                   </Text>
@@ -542,22 +540,22 @@ export default function ManageCategories() {
                     </Text>
                   ) : null}
                 </View>
-                <View className="flex-row items-center">
+                <View className="flex-row flex-wrap gap-2">
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300"
                     onPress={() => router.push({ pathname: "/tournaments/[id]/fixtures/[categoryId]", params: { id: String(tid), categoryId: String(c.id) } } as any)}
                   >
-                    <Text className="text-gray-800">View Fixtures</Text>
+                    <Text className="text-gray-800 text-sm">Fixtures</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    className={`ml-2 px-3 py-2 rounded-lg ${saving ? "bg-gray-200" : "bg-blue-50"} border border-blue-300`}
+                    className={`px-3 py-2 rounded-lg ${saving ? "bg-gray-200" : "bg-blue-50"} border border-blue-300`}
                     onPress={() => generateBracket(c.id)}
                     disabled={saving}
                   >
-                    <Text className={`${saving ? "text-gray-500" : "text-blue-700"}`}>Generate Bracket</Text>
+                    <Text className={`text-sm ${saving ? "text-gray-500" : "text-blue-700"}`}>Generate</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity className="ml-2 px-3 py-2 rounded-lg border border-red-300" onPress={() => removeCategory(c.id)}>
-                    <Text className="text-red-700">Delete</Text>
+                  <TouchableOpacity className="px-3 py-2 rounded-lg border border-red-300" onPress={() => removeCategory(c.id)}>
+                    <Text className="text-red-700 text-sm">Delete</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -565,111 +563,39 @@ export default function ManageCategories() {
           )}
         </View>
 
-        <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-4">
-          <Text className="text-base font-semibold text-gray-900 mb-2">Registration Window</Text>
-          <View className="mb-3">
-            <Text className="text-sm text-gray-700 mb-1">Start date (dd/mm/yyyy)</Text>
-            <TextInput
-              className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
-              value={regStart}
-              onChangeText={(v) => { setRegStart(v); setErrRegStart(null); }}
-              placeholder="dd/mm/yyyy"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-            />
-            <Text className="text-sm text-gray-700 mb-1 mt-3">Start time (h:mm AM/PM)</Text>
-            <View className="flex-row items-center">
-              <TextInput
-                className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
-                value={regStartTime}
-                onChangeText={(v) => { setRegStartTime(v); setErrRegStart(null); }}
-                placeholder="h:mm AM/PM"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regStart")}>
-                <Text className="text-gray-800">Pick</Text>
-              </TouchableOpacity>
-            </View>
-            {errRegStart ? (
-              <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                <Text className="text-xs text-red-800">{errRegStart}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View className="mb-4">
-            <Text className="text-sm text-gray-700 mb-1">End date (dd/mm/yyyy)</Text>
-            <TextInput
-              className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
-              value={regEnd}
-              onChangeText={(v) => { setRegEnd(v); setErrRegEnd(null); }}
-              placeholder="dd/mm/yyyy"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-            />
-            <Text className="text-sm text-gray-700 mb-1 mt-3">End time (h:mm AM/PM)</Text>
-            <View className="flex-row items-center">
-              <TextInput
-                className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white flex-1"
-                value={regEndTime}
-                onChangeText={(v) => { setRegEndTime(v); setErrRegEnd(null); }}
-                placeholder="h:mm AM/PM"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              <TouchableOpacity className="ml-2 px-3 py-3 rounded-lg bg-gray-100 active:bg-gray-200" onPress={() => handleTimePick("regEnd")}>
-                <Text className="text-gray-800">Pick</Text>
-              </TouchableOpacity>
-            </View>
-            {errRegEnd ? (
-              <View className="mt-2 self-start rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                <Text className="text-xs text-red-800">{errRegEnd}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View className="flex-row space-x-2 items-center">
-            <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-              onPress={saveWindow}
-              disabled={saving}
-            >
-              <Text className={`text-center font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Save Window</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving || items.length === 0 ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
-              onPress={openNowUntilStart}
-              disabled={saving || items.length === 0}
-            >
-              <Text className={`text-center font-semibold ${saving || items.length === 0 ? "text-gray-300" : "text-white"}`}>Open Now Until Start Date</Text>
-            </TouchableOpacity>
-            {items.length === 0 ? (
-              <Text className="ml-2 text-xs text-gray-600">Add at least one category to enable opening registration.</Text>
-            ) : null}
-          </View>
-        </View>
-
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
           <Text className="text-base font-semibold text-gray-900 mb-2">Registration</Text>
-          <Text className="text-sm text-gray-600 mb-3">Status: {tournament?.status || "draft"}</Text>
-          <View className="flex-row space-x-2 items-center">
+          <Text className="text-sm text-gray-600 mb-1">Status: {tournament?.status || "draft"}</Text>
+          {tournament?.registration_start_date && tournament?.registration_end_date && (
+            <Text className="text-xs text-gray-500 mb-3">
+              Window: {new Date(tournament.registration_start_date).toLocaleDateString()} – {new Date(tournament.registration_end_date).toLocaleDateString()}
+            </Text>
+          )}
+          {items.length === 0 && (
+            <Text className="text-xs text-amber-700 mb-3">Add at least one category to enable registration.</Text>
+          )}
+          <View className="flex-row flex-wrap gap-2">
             <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving || items.length === 0 ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
+              className={`py-3 px-4 rounded-lg ${saving || items.length === 0 ? "bg-gray-300" : "bg-green-600 active:bg-green-700"}`}
               onPress={() => toggleRegistration(true)}
               disabled={saving || items.length === 0}
             >
               <Text className={`text-center font-semibold ${saving || items.length === 0 ? "text-gray-500" : "text-white"}`}>Open Registration</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-gray-600 active:bg-gray-700"}`}
+              className={`py-3 px-4 rounded-lg ${saving ? "bg-gray-300" : "bg-gray-600 active:bg-gray-700"}`}
               onPress={() => toggleRegistration(false)}
               disabled={saving}
             >
               <Text className={`text-center font-semibold ${saving ? "text-gray-300" : "text-white"}`}>Close Registration</Text>
             </TouchableOpacity>
-            {items.length === 0 ? (
-              <Text className="ml-2 text-xs text-gray-600">Add a category first to enable opening registration.</Text>
-            ) : null}
           </View>
+          <TouchableOpacity
+            className="mt-3 py-2"
+            onPress={() => router.push({ pathname: "/host/tournaments/[id]/edit", params: { id: String(tid) } } as any)}
+          >
+            <Text className="text-blue-600 text-sm">Edit registration window →</Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity className="rounded-lg py-3 px-6 border border-gray-300 mb-8" onPress={() => router.push("/host" as any)}>
