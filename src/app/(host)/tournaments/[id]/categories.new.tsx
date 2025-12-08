@@ -175,14 +175,22 @@ export default function ManageCategories() {
         Alert.alert("Add at least one category before opening registration");
         return;
       }
-      if (open && (!tournament.registration_start_date || !tournament.registration_end_date)) {
-        Alert.alert("Registration window not set", "Please edit the tournament to set the registration window first.");
-        return;
-      }
       setSaving(true);
+      
+      // Build update payload
+      const updatePayload: Record<string, any> = { status: open ? "registration_open" : "draft" };
+      
+      // If opening and no window set, auto-set to now → tournament start
+      if (open && (!tournament.registration_start_date || !tournament.registration_end_date)) {
+        const now = new Date();
+        const regEnd = tournament.start_date ? new Date(tournament.start_date) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // fallback: 7 days from now
+        updatePayload.registration_start_date = now.toISOString();
+        updatePayload.registration_end_date = regEnd.toISOString();
+      }
+      
       const { error } = await supabase
         .from("tournaments")
-        .update({ status: open ? "registration_open" : "draft" })
+        .update(updatePayload)
         .eq("id", tid);
       if (error) throw error;
       await load();
@@ -359,7 +367,7 @@ export default function ManageCategories() {
           </View>
           <TouchableOpacity
             className="mt-3 py-2"
-            onPress={() => router.push({ pathname: "/host/tournaments/[id]/edit", params: { id: String(tid) } } as any)}
+            onPress={() => router.push({ pathname: "/(host)/tournaments/[id]/edit", params: { id: String(tid) } } as any)}
           >
             <Text className="text-blue-600 text-sm">Edit tournament details →</Text>
           </TouchableOpacity>

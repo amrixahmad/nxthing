@@ -68,12 +68,12 @@ export default function TournamentDetails() {
   const [inviteCode, setInviteCode] = useState("");
   const isOpen = (() => {
     if (!tour) return false;
-    if (tour.status !== "registration_open") return false;
-    if (!tour.registration_start_date || !tour.registration_end_date) return false;
+    // Registration is open if status is 'registration_open' OR we're within the window
+    const s = tour.registration_start_date ? new Date(tour.registration_start_date) : null;
+    const e = tour.registration_end_date ? new Date(tour.registration_end_date) : null;
     const now = new Date();
-    const s = new Date(tour.registration_start_date);
-    const e = new Date(tour.registration_end_date);
-    return now >= s && now <= e;
+    const inWindow = !!(s && e && now >= s && now <= e);
+    return tour.status === "registration_open" || inWindow;
   })();
 
   async function load() {

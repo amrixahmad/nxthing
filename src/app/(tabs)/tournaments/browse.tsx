@@ -113,7 +113,10 @@ export default function BrowseTournaments() {
                 {(() => {
                   const s = t.registration_start_date ? new Date(t.registration_start_date) : null;
                   const e = t.registration_end_date ? new Date(t.registration_end_date) : null;
-                  const open = !!(s && e && new Date() >= s && new Date() <= e);
+                  const now = new Date();
+                  const inWindow = !!(s && e && now >= s && now <= e);
+                  // Registration is open if status is 'registration_open' OR we're within the window
+                  const open = t.status === 'registration_open' || inWindow;
                   return (
                     <View className={`self-start px-2 py-1 rounded ${open ? 'bg-green-100' : 'bg-gray-100'}`}>
                       <Text className={`text-xs ${open ? 'text-green-800' : 'text-gray-800'}`}>

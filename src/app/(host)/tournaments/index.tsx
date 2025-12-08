@@ -80,7 +80,7 @@ export default function HostTournaments() {
             <Text className="text-green-800">{noticeText}</Text>
           </View>
         )}
-        <TouchableOpacity className="bg-blue-600 rounded-xl p-4 mb-4 active:bg-blue-700" onPress={() => router.push("/host/new" as any)}>
+        <TouchableOpacity className="bg-blue-600 rounded-xl p-4 mb-4 active:bg-blue-700" onPress={() => router.push("/(host)/tournaments/new" as any)}>
           <Text className="text-white text-center font-semibold">＋ New Tournament</Text>
         </TouchableOpacity>
 
@@ -111,19 +111,19 @@ export default function HostTournaments() {
                 <View className="mt-3 flex-row flex-wrap gap-2">
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
-                    onPress={() => router.push({ pathname: "/host/[id]/categories", params: { id: String(t.id) } } as any)}
+                    onPress={() => router.push({ pathname: "/(host)/tournaments/[id]/categories", params: { id: String(t.id) } } as any)}
                   >
                     <Text className="text-gray-800 text-sm">Categories</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
-                    onPress={() => router.push({ pathname: "/host/[id]/edit", params: { id: String(t.id) } } as any)}
+                    onPress={() => router.push({ pathname: "/(host)/tournaments/[id]/edit", params: { id: String(t.id) } } as any)}
                   >
                     <Text className="text-gray-800 text-sm">Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300 active:bg-gray-50"
-                    onPress={() => router.push({ pathname: "/host/[id]/referees", params: { id: String(t.id) } } as any)}
+                    onPress={() => router.push({ pathname: "/(host)/tournaments/[id]/referees", params: { id: String(t.id) } } as any)}
                   >
                     <Text className="text-gray-800 text-sm">Referees</Text>
                   </TouchableOpacity>
