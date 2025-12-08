@@ -21,7 +21,6 @@ export default function NewTournament() {
   const [regStartTime, setRegStartTime] = useState("");
   const [regEnd, setRegEnd] = useState("");
   const [regEndTime, setRegEndTime] = useState("");
-  const [format, setFormat] = useState<"single_elimination" | "double_elimination" | "round_robin">("single_elimination");
   const [submitting, setSubmitting] = useState(false);
 
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -274,7 +273,6 @@ export default function NewTournament() {
           registration_start_date: regStartDT.toISOString(),
           registration_end_date: regEndDT.toISOString(),
           status: "draft",
-          format,
         });
       if (error) throw error;
       toast.show({ type: "success", message: "Tournament created" });
@@ -465,30 +463,6 @@ export default function NewTournament() {
                   <Text className="text-xs text-red-800">{errRegEnd}</Text>
                 </View>
               ) : null}
-            </View>
-          </View>
-
-          <View className="mb-6">
-            <Text className="text-base font-medium text-gray-700 mb-2">Format</Text>
-            <View className="flex-row flex-wrap gap-2">
-              <TouchableOpacity
-                className={`px-3 py-2 rounded-lg border ${format === "single_elimination" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
-                onPress={() => setFormat("single_elimination")}
-              >
-                <Text className={`text-sm ${format === "single_elimination" ? "text-white" : "text-gray-700"}`}>Single</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className={`px-3 py-2 rounded-lg border ${format === "double_elimination" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
-                onPress={() => setFormat("double_elimination")}
-              >
-                <Text className={`text-sm ${format === "double_elimination" ? "text-white" : "text-gray-700"}`}>Double</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className={`px-3 py-2 rounded-lg border ${format === "round_robin" ? "bg-blue-600 border-blue-600" : "border-gray-300"}`}
-                onPress={() => setFormat("round_robin")}
-              >
-                <Text className={`text-sm ${format === "round_robin" ? "text-white" : "text-gray-700"}`}>Round-robin</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
