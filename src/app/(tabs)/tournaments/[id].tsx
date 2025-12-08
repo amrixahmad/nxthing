@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Image, Platform } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Image, Platform, RefreshControl } from "react-native";
 import { Stack, useLocalSearchParams, Link, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -34,6 +34,7 @@ export default function TournamentDetails() {
   const tid = Number(params.id);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tour, setTour] = useState<Tour | null>(null);
   const [entryByCategory, setEntryByCategory] = useState<
     Record<
@@ -75,6 +76,12 @@ export default function TournamentDetails() {
     const inWindow = !!(s && e && now >= s && now <= e);
     return tour.status === "registration_open" || inWindow;
   })();
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   async function load() {
     setLoading(true);
@@ -404,7 +411,10 @@ export default function TournamentDetails() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView 
+      className="flex-1 bg-gray-50"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Stack.Screen options={{ title: tour?.title || `Tournament #${tid}` }} />
 
       <View className="px-4 mt-6">

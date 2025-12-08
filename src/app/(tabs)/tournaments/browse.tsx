@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
 import { Stack, Link } from "expo-router";
 import { formatDateTimeLocal } from "@/src/utils/datetime";
 import { useSession } from "@/context/SessionProvider";
@@ -22,8 +22,15 @@ type EntryMeta = { id: number; category_id: number; payment_status: string };
 export default function BrowseTournaments() {
   const { session } = useSession();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tournaments, setTournaments] = useState<Tour[]>([]);
   const [entryByCategory, setEntryByCategory] = useState<Record<number, EntryMeta>>({});
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -87,7 +94,10 @@ export default function BrowseTournaments() {
   // No direct Register/Pay actions here. This page only links to tournament details.
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView 
+      className="flex-1 bg-gray-50"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Stack.Screen options={{ title: "Browse Tournaments" }} />
 
       <View className="px-4 mt-6">

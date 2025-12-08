@@ -416,7 +416,10 @@ export default function ManageCategories() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView 
+      className="flex-1 bg-gray-50"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Stack.Screen options={{ title: tournament?.title || `Tournament #${tid}` }} />
 
       <View className="px-4 mt-6">

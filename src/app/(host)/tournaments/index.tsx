@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Alert, Platform, RefreshControl } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -27,30 +27,39 @@ export default function HostTournaments() {
   const params = useLocalSearchParams<{ notice?: string }>();
   const [items, setItems] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<"success" | null>(null);
   const [noticeText, setNoticeText] = useState("");
   const toast = useToast();
 
-  useEffect(() => {
-    async function load() {
-      try {
-        if (!session?.user) return;
-        setLoading(true);
-        const { data, error } = await supabase
-          .from("tournaments")
-          .select("id,title,status,start_date,created_at")
-          .eq("organizer_id", session.user.id)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setItems(data || []);
-      } catch (e) {
-        if (e instanceof Error) Alert.alert("Error", e.message);
-      } finally {
-        setLoading(false);
-      }
+  async function load() {
+    try {
+      if (!session?.user) return;
+      // Don't set loading true if we are refreshing, to avoid full screen loading state
+      if (!refreshing) setLoading(true);
+      const { data, error } = await supabase
+        .from("tournaments")
+        .select("id,title,status,start_date,created_at")
+        .eq("organizer_id", session.user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setItems(data || []);
+    } catch (e) {
+      if (e instanceof Error) Alert.alert("Error", e.message);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     load();
   }, [session]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     if (params.notice) {
