@@ -93,15 +93,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
         } else {
           const expectedCents = Math.round(Number(entry.payment_amount ?? 0) * 100);
           const expectedCurrency = String(entry.payment_currency || "myr").toLowerCase();
-          if (totalCents !== expectedCents || sessCurrency !== expectedCurrency) {
-            console.warn("Webhook: amount/currency mismatch", {
+          
+          // Log for debugging
+          console.log("Webhook: processing payment", {
+            entryId,
+            expectedCents,
+            totalCents,
+            expectedCurrency,
+            sessCurrency,
+            entryPaymentAmount: entry.payment_amount,
+            entryPaymentCurrency: entry.payment_currency,
+          });
+
+          // For beta: allow currency mismatch if amount matches (handles legacy USD entries)
+          // Also allow if entry has no payment_amount set yet (edge case)
+          const amountMatches = expectedCents === 0 || totalCents === expectedCents;
+          const currencyOk = sessCurrency === "myr"; // Accept MYR payments regardless of entry currency
+          
+          if (!amountMatches && expectedCents > 0) {
+            console.warn("Webhook: amount mismatch - not marking as paid", {
               entryId,
               expectedCents,
               totalCents,
-              expectedCurrency,
-              sessCurrency,
             });
             // Record the reference; do not mark as paid
+            await supabase
+              .from("entries")
+              .update({ payment_reference: session.id })
+              .eq("id", entryId);
+          } else if (!currencyOk) {
+            console.warn("Webhook: unexpected currency (not MYR)", { entryId, sessCurrency });
             await supabase
               .from("entries")
               .update({ payment_reference: session.id })
@@ -114,8 +135,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
                 .update({
                   payment_status: "paid",
                   payment_reference: session.id,
-                  payment_amount: expectedCents / 100.0,
-                  payment_currency: expectedCurrency,
+                  payment_amount: totalCents / 100.0,
+                  payment_currency: sessCurrency, // Use actual currency from Stripe
                   paid_at: new Date().toISOString(),
                 })
                 .eq("entry_id", entryId)
