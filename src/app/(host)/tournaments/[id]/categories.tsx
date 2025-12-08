@@ -301,23 +301,39 @@ export default function ManageCategories() {
       if (!tournament) return;
       // Pre-check: registration_end_date must be present and in the past
       if (!tournament.registration_end_date) {
-        Alert.alert("Registration not closed", "Set and close the registration window first");
+        toast.show({ type: "error", message: "Set and close the registration window first" });
         return;
       }
       const ended = new Date(tournament.registration_end_date).getTime() <= Date.now();
       if (!ended) {
-        Alert.alert("Registration still open", "You can generate brackets after registration closes");
+        toast.show({ type: "error", message: "Registration is still open. Generate brackets after it closes." });
         return;
       }
       setSaving(true);
       const { data, error } = await supabase.functions.invoke("generate-bracket", {
         body: { category_id: categoryId },
       });
-      if (error) throw error as any;
-      const msg = (data as any)?.message || "Bracket generated";
+      
+      // Check for error in response body (edge function returns error in JSON)
+      if (error) {
+        // Try to extract message from the error context
+        const errMsg = (error as any)?.context?.body 
+          ? JSON.parse((error as any).context.body)?.error 
+          : (error as any)?.message || "Failed to generate bracket";
+        throw new Error(errMsg);
+      }
+      
+      // Check if data contains an error (some edge function errors come this way)
+      if ((data as any)?.error) {
+        throw new Error((data as any).error);
+      }
+      
+      const msg = (data as any)?.message || "Bracket generated successfully!";
       toast.show({ type: "success", message: msg });
     } catch (e) {
-      if (e instanceof Error) Alert.alert("Error", e.message);
+      const msg = e instanceof Error ? e.message : "Failed to generate bracket";
+      toast.show({ type: "error", message: msg });
+      if (Platform.OS !== "web") Alert.alert("Error", msg);
     } finally {
       setSaving(false);
     }
