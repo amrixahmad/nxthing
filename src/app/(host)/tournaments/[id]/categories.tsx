@@ -38,7 +38,7 @@ export default function ManageCategories() {
 
   const [name, setName] = useState("");
   const [ptype, setPtype] = useState<"singles" | "doubles" | "team">("singles");
-  const [fee, setFee] = useState("20");
+  const [fee, setFee] = useState("1");
   const [maxTeams, setMaxTeams] = useState("16");
   const [teamMinFromTemplate, setTeamMinFromTemplate] = useState<number | null>(null);
   const [teamMaxFromTemplate, setTeamMaxFromTemplate] = useState<number | null>(null);
@@ -183,8 +183,8 @@ export default function ManageCategories() {
       }
       setSaving(true);
       const regFee = Number(fee) || 0;
-      if (regFee < 20) {
-        Alert.alert("Minimum fee is RM 20");
+      if (regFee < 1) {
+        Alert.alert("Minimum fee is RM 1");
         return;
       }
       const max = Number(maxTeams) || null;
@@ -204,7 +204,7 @@ export default function ManageCategories() {
       if (error) throw error;
       setName("");
       setPtype("singles");
-      setFee("20");
+      setFee("1");
       setMaxTeams("16");
       setTeamMinFromTemplate(null);
       setTeamMaxFromTemplate(null);
@@ -496,7 +496,7 @@ export default function ManageCategories() {
               value={fee}
               onChangeText={setFee}
             />
-            <Text className="text-xs text-gray-500 mt-1">Minimum fee is RM 20</Text>
+            <Text className="text-xs text-gray-500 mt-1">Minimum fee is RM 1</Text>
           </View>
 
           <View className="mb-4">
