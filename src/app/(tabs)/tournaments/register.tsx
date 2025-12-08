@@ -5,19 +5,46 @@ import * as WebBrowser from "expo-web-browser";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
 
+type TeamMember = {
+  profile_id: string;
+  payment_status: string | null;
+  profile?: {
+    full_name?: string | null;
+    username?: string | null;
+  } | null;
+};
+
+type TournamentInfo = {
+  id: number;
+  title: string | null;
+  venue_name?: string | null;
+  start_date?: string | null;
+};
+
+type CategoryInfo = {
+  id: number;
+  name: string | null;
+  registration_fee?: number | null;
+  members_per_team_min?: number | null;
+  members_per_team_max?: number | null;
+};
+
 export default function RegisterAndPay() {
   const { session } = useSession();
   const [categoryId, setCategoryId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const params = useLocalSearchParams<{ payment?: string; entry_id?: string; session_id?: string; invite?: string }>();
   const [processing, setProcessing] = useState(false);
-  const [notice, setNotice] = useState<"success" | "warning" | null>(null);
+  const [notice, setNotice] = useState<"success" | "warning" | "error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
   const [joining, setJoining] = useState(false);
   const [joinedEntryId, setJoinedEntryId] = useState<number | null>(null);
   const [teamName, setTeamName] = useState<string | null>(null);
   const [teamSlogan, setTeamSlogan] = useState<string | null>(null);
   const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null);
+  const [tournament, setTournament] = useState<TournamentInfo | null>(null);
+  const [category, setCategory] = useState<CategoryInfo | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
   async function ensureEntry(userId: string, catId: number) {
     const { data: existing, error: selErr } = await supabase
@@ -60,20 +87,66 @@ export default function RegisterAndPay() {
         const entryId = Number((data as any)?.entry_id || 0);
         if (entryId) {
           setJoinedEntryId(entryId);
-          // Load team profile for display
+          // Load team profile, tournament, category, and members for display
           const { data: e } = await supabase
             .from("entries")
-            .select("team_name, team_slogan, team_logo_url, invite_code")
+            .select(`
+              team_name, team_slogan, team_logo_url, invite_code,
+              category:category_id (
+                id, name, registration_fee, members_per_team_min, members_per_team_max,
+                tournament:tournament_id (
+                  id, title, venue_name, start_date
+                )
+              )
+            `)
             .eq("id", entryId)
             .maybeSingle();
           if (e) {
             if (e.team_name != null) setTeamName(String(e.team_name));
             if (e.team_slogan != null) setTeamSlogan(String(e.team_slogan));
             if (e.team_logo_url != null) setTeamLogoUrl(String(e.team_logo_url));
+            
+            // Extract category and tournament
+            let cat = (e as any).category;
+            if (Array.isArray(cat)) cat = cat[0];
+            if (cat) {
+              setCategory({
+                id: cat.id,
+                name: cat.name,
+                registration_fee: cat.registration_fee,
+                members_per_team_min: cat.members_per_team_min,
+                members_per_team_max: cat.members_per_team_max,
+              });
+              let tour = cat.tournament;
+              if (Array.isArray(tour)) tour = tour[0];
+              if (tour) {
+                setTournament({
+                  id: tour.id,
+                  title: tour.title,
+                  venue_name: tour.venue_name,
+                  start_date: tour.start_date,
+                });
+              }
+            }
+          }
+          
+          // Load team members
+          const { data: members } = await supabase
+            .from("entry_members")
+            .select("profile_id, payment_status, profile:profile_id (full_name, username)")
+            .eq("entry_id", entryId);
+          if (members) {
+            setTeamMembers(members.map((m: any) => ({
+              profile_id: m.profile_id,
+              payment_status: m.payment_status,
+              profile: Array.isArray(m.profile) ? m.profile[0] : m.profile,
+            })));
           }
         }
       } catch (err: any) {
-        Alert.alert("Invite Error", err?.message || "Could not join team");
+        setNotice("error");
+        setNoticeText(err?.message || "Could not join team");
+        if (Platform.OS !== "web") Alert.alert("Invite Error", err?.message || "Could not join team");
       } finally {
         setJoining(false);
       }
@@ -163,28 +236,41 @@ export default function RegisterAndPay() {
 
   async function onJoinAndPay() {
     try {
+      setNotice(null);
       if (!session?.user) {
-        Alert.alert("Sign in required");
+        setNotice("error");
+        setNoticeText("Please sign in to continue.");
         return;
       }
       if (!joinedEntryId) {
-        Alert.alert("Invite", "Invite not validated yet. Please try again.");
+        setNotice("error");
+        setNoticeText("Invite not validated yet. Please wait or refresh the page.");
         return;
       }
       setSubmitting(true);
       const { data, error } = await supabase.functions.invoke("stripe-checkout", {
         body: { entry_id: joinedEntryId },
       });
-      if (error) throw error;
+      if (error) {
+        // Try to extract error message from response
+        const errMsg = (data as any)?.error || error.message || "Payment initialization failed";
+        throw new Error(errMsg);
+      }
       const url = (data as any)?.url as string | undefined;
-      if (!url) throw new Error("No checkout URL returned");
+      if (!url) {
+        const errMsg = (data as any)?.error || "No checkout URL returned";
+        throw new Error(errMsg);
+      }
       if (Platform.OS === "web") {
         window.location.href = url;
       } else {
         await WebBrowser.openBrowserAsync(url);
       }
-    } catch (e) {
-      if (e instanceof Error) Alert.alert("Error", e.message);
+    } catch (e: any) {
+      const msg = e?.message || "An error occurred";
+      setNotice("error");
+      setNoticeText(msg);
+      if (Platform.OS !== "web") Alert.alert("Error", msg);
     } finally {
       setSubmitting(false);
     }
@@ -211,6 +297,11 @@ export default function RegisterAndPay() {
             <Text className="text-yellow-800">{noticeText}</Text>
           </View>
         )}
+        {notice === "error" && (
+          <View className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200">
+            <Text className="text-red-800">{noticeText}</Text>
+          </View>
+        )}
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           {params.invite ? (
             <>
@@ -218,6 +309,31 @@ export default function RegisterAndPay() {
               <Text className="text-sm text-gray-700 mb-4">
                 {joining ? "Validating invite..." : teamName ? `You are registering to join ${teamName}.` : "Invite recognized. You can proceed to payment."}
               </Text>
+
+              {/* Tournament & Category Info */}
+              {tournament && (
+                <View className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <Text className="text-sm font-semibold text-gray-900">{tournament.title}</Text>
+                  {tournament.venue_name && (
+                    <Text className="text-xs text-gray-600 mt-1">{tournament.venue_name}</Text>
+                  )}
+                  {tournament.start_date && (
+                    <Text className="text-xs text-gray-500 mt-1">
+                      Starts: {new Date(tournament.start_date).toLocaleDateString()}
+                    </Text>
+                  )}
+                  {category && (
+                    <View className="mt-2 pt-2 border-t border-gray-200">
+                      <Text className="text-xs font-medium text-gray-700">Category: {category.name}</Text>
+                      {category.registration_fee != null && category.registration_fee > 0 && (
+                        <Text className="text-xs text-gray-600">Fee: RM {category.registration_fee}</Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Team Card */}
               {(teamName || teamSlogan || teamLogoUrl) && (
                 <View className="mb-4 p-3 rounded-lg bg-indigo-50 border border-indigo-200 flex-row items-center">
                   {teamLogoUrl ? (
@@ -244,6 +360,35 @@ export default function RegisterAndPay() {
                   </View>
                 </View>
               )}
+
+              {/* Team Members */}
+              {!joining && (
+                <View className="mb-4">
+                  <Text className="text-sm font-medium text-gray-700 mb-2">Team Members</Text>
+                  {teamMembers.length === 0 ? (
+                    <Text className="text-xs text-gray-500 italic">No members yet. You might be the first to join!</Text>
+                  ) : teamMembers.length === 1 && teamMembers[0].profile_id === session?.user?.id ? (
+                    <Text className="text-xs text-gray-500 italic">You're the first member! Share the invite link with your teammates.</Text>
+                  ) : (
+                    <View className="space-y-2">
+                      {teamMembers.map((m) => (
+                        <View key={m.profile_id} className="flex-row items-center justify-between py-1">
+                          <Text className="text-sm text-gray-800">
+                            {m.profile?.full_name || m.profile?.username || m.profile_id.slice(0, 8)}
+                            {m.profile_id === session?.user?.id ? " (You)" : ""}
+                          </Text>
+                          <View className={`px-2 py-0.5 rounded ${m.payment_status === "paid" ? "bg-green-100" : "bg-yellow-100"}`}>
+                            <Text className={`text-xs ${m.payment_status === "paid" ? "text-green-700" : "text-yellow-700"}`}>
+                              {m.payment_status === "paid" ? "Paid" : "Unpaid"}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
               <TouchableOpacity
                 className={`rounded-lg py-4 px-6 ${submitting || joining ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                 onPress={onJoinAndPay}
