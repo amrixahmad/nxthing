@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Image, Modal, Pressable } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSession } from "@/context/SessionProvider";
@@ -45,6 +45,9 @@ export default function RegisterAndPay() {
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
   const [category, setCategory] = useState<CategoryInfo | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [myPaymentStatus, setMyPaymentStatus] = useState<string | null>(null);
 
   async function ensureEntry(userId: string, catId: number) {
     const { data: existing, error: selErr } = await supabase
@@ -141,6 +144,11 @@ export default function RegisterAndPay() {
               payment_status: m.payment_status,
               profile: Array.isArray(m.profile) ? m.profile[0] : m.profile,
             })));
+            // Check if current user has already paid
+            const myMember = members.find((m: any) => m.profile_id === session?.user?.id);
+            if (myMember) {
+              setMyPaymentStatus(myMember.payment_status);
+            }
           }
         }
       } catch (err: any) {
@@ -389,15 +397,59 @@ export default function RegisterAndPay() {
                 </View>
               )}
 
-              <TouchableOpacity
-                className={`rounded-lg py-4 px-6 ${submitting || joining ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-                onPress={onJoinAndPay}
-                disabled={submitting || joining}
-              >
-                <Text className={`text-center font-semibold ${submitting || joining ? "text-gray-500" : "text-white"}`}>
-                  {submitting || processing ? "Processing..." : "Join Team & Pay"}
-                </Text>
-              </TouchableOpacity>
+              {/* Show payment status or pay button */}
+              {myPaymentStatus === "paid" ? (
+                <View className="mt-4 p-4 rounded-lg bg-green-50 border border-green-200">
+                  <Text className="text-green-800 text-center font-semibold">✓ You have already paid</Text>
+                  <Text className="text-green-700 text-center text-sm mt-1">
+                    Your registration is complete. Check "My Entries" for team status.
+                  </Text>
+                  <TouchableOpacity
+                    className="mt-3 rounded-lg py-3 px-4 bg-green-600 active:bg-green-700"
+                    onPress={() => router.push("/tournaments/my" as any)}
+                  >
+                    <Text className="text-white text-center font-semibold">View My Entries</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  {/* Disclaimer checkbox */}
+                  <View className="mt-4 flex-row items-start">
+                    <TouchableOpacity
+                      className={`w-5 h-5 rounded border-2 mr-3 mt-0.5 items-center justify-center ${agreedToTerms ? "bg-blue-600 border-blue-600" : "border-gray-400"}`}
+                      onPress={() => setAgreedToTerms(!agreedToTerms)}
+                    >
+                      {agreedToTerms && <Text className="text-white text-xs font-bold">✓</Text>}
+                    </TouchableOpacity>
+                    <View className="flex-1">
+                      <Text className="text-sm text-gray-700">
+                        I agree to the{" "}
+                        <Text 
+                          className="text-blue-600 underline"
+                          onPress={() => setShowDisclaimer(true)}
+                        >
+                          Terms & Disclaimer
+                        </Text>
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    className={`mt-4 rounded-lg py-4 px-6 ${submitting || joining || !agreedToTerms ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                    onPress={onJoinAndPay}
+                    disabled={submitting || joining || !agreedToTerms}
+                  >
+                    <Text className={`text-center font-semibold ${submitting || joining || !agreedToTerms ? "text-gray-500" : "text-white"}`}>
+                      {submitting || processing ? "Processing..." : "Join Team & Pay"}
+                    </Text>
+                  </TouchableOpacity>
+                  {!agreedToTerms && (
+                    <Text className="text-xs text-gray-500 text-center mt-2">
+                      Please agree to the terms to continue
+                    </Text>
+                  )}
+                </>
+              )}
             </>
           ) : (
             <>
@@ -413,19 +465,124 @@ export default function RegisterAndPay() {
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
+              {/* Disclaimer checkbox */}
+              <View className="mb-4 flex-row items-start">
+                <TouchableOpacity
+                  className={`w-5 h-5 rounded border-2 mr-3 mt-0.5 items-center justify-center ${agreedToTerms ? "bg-blue-600 border-blue-600" : "border-gray-400"}`}
+                  onPress={() => setAgreedToTerms(!agreedToTerms)}
+                >
+                  {agreedToTerms && <Text className="text-white text-xs font-bold">✓</Text>}
+                </TouchableOpacity>
+                <View className="flex-1">
+                  <Text className="text-sm text-gray-700">
+                    I agree to the{" "}
+                    <Text 
+                      className="text-blue-600 underline"
+                      onPress={() => setShowDisclaimer(true)}
+                    >
+                      Terms & Disclaimer
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+
               <TouchableOpacity
-                className={`rounded-lg py-4 px-6 ${submitting ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
+                className={`rounded-lg py-4 px-6 ${submitting || !agreedToTerms ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
                 onPress={onRegisterAndPay}
-                disabled={submitting}
+                disabled={submitting || !agreedToTerms}
               >
-                <Text className={`text-center font-semibold ${submitting ? "text-gray-500" : "text-white"}`}>
+                <Text className={`text-center font-semibold ${submitting || !agreedToTerms ? "text-gray-500" : "text-white"}`}>
                   {submitting || processing ? "Processing..." : "Register & Pay"}
                 </Text>
               </TouchableOpacity>
+              {!agreedToTerms && (
+                <Text className="text-xs text-gray-500 text-center mt-2">
+                  Please agree to the terms to continue
+                </Text>
+              )}
             </>
           )}
         </View>
       </View>
+
+      {/* Disclaimer Modal */}
+      <Modal
+        visible={showDisclaimer}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDisclaimer(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl max-h-[85%]">
+            <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
+              <Text className="text-lg font-semibold text-gray-900">Terms & Disclaimer</Text>
+              <TouchableOpacity onPress={() => setShowDisclaimer(false)}>
+                <Text className="text-2xl text-gray-500">×</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView className="p-4">
+              <Text className="text-base font-bold text-gray-900 mb-4">
+                NXThing – Web Trial App Tester Disclaimer
+              </Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                By signing up and using the NXThing web-based trial platform, you agree to the following:
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">1. Trial / Beta Notice</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                NXThing is in a trial/beta stage. Features may be incomplete, unstable, or changed without notice. You may experience bugs, errors, delays, or downtime. The platform is provided "AS IS", and NXThing Sdn Bhd is not liable for data loss, inaccurate match information, system issues, or interruptions.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">2. User Responsibility</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                You agree to provide accurate information. Event details such as match times, venues, and results are controlled by organizers, not NXThing.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">3. Limits of Liability</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                NXThing shall not be held liable for:{"\n"}
+                • Incorrect event information from organizers{"\n"}
+                • Injuries, damages, or incidents at events{"\n"}
+                • Issues caused by your device, internet, or external services{"\n"}
+                Participation is at your own risk and follows the organizer's rules.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">4. Third-Party & Privacy</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                Some content may come from third-party organizers or sponsors. NXThing does not control or endorse such content. You agree to NXThing's PDPA-compliant data use, including notifications related to tournaments and app services. We do not sell personal data.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">5. Intellectual Property</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                All designs, logos, and content belong to NXThing Sdn Bhd and cannot be copied or reused without permission.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">6. Assumption of Risk & Release</Text>
+              <Text className="text-sm text-gray-700 mb-2">
+                You understand pickleball involves risks (e.g., falls, collisions, injury) and that no insurance is provided by NXThing or organizers. You agree to release and hold harmless organizers, hosts, sponsors, volunteers, and venue owners from any claims arising from your participation.
+              </Text>
+
+              <Text className="text-sm font-semibold text-gray-900 mt-4 mb-1">7. Updates</Text>
+              <Text className="text-sm text-gray-700 mb-4">
+                Using the platform means you accept the latest version of this disclaimer and any future updates.
+              </Text>
+
+              <View className="h-6" />
+            </ScrollView>
+            <View className="p-4 border-t border-gray-200">
+              <TouchableOpacity
+                className="rounded-lg py-4 px-6 bg-blue-600 active:bg-blue-700"
+                onPress={() => {
+                  setAgreedToTerms(true);
+                  setShowDisclaimer(false);
+                }}
+              >
+                <Text className="text-center font-semibold text-white">I Agree</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
