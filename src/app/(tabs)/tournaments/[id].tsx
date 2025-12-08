@@ -682,21 +682,35 @@ export default function TournamentDetails() {
                         </Text>
                       ) : null}
                       {(acceptedCounts[c.id] ?? 0) > 0 && participants.length > 0 ? (
-                        <View className="mt-2">
-                          <Text className="text-xs text-gray-700 mb-1">Participants</Text>
-                          <View className="flex-row flex-wrap -m-1">
-                            {preview.map((name, idx) => (
-                              <View key={idx} className="m-1 px-2 py-1 rounded bg-gray-100">
-                                <Text className="text-xs text-gray-800">{name}</Text>
-                              </View>
-                            ))}
+                        <View className="mt-3">
+                          <Text className="text-xs font-medium text-gray-700 mb-2">Participants ({participants.length} teams)</Text>
+                          <View className="space-y-2">
+                            {preview.map((teamMembers, idx) => {
+                              // Split team members and display nicely
+                              const members = teamMembers.split(" / ").filter(Boolean);
+                              return (
+                                <View key={idx} className="p-2 rounded-lg bg-gray-50 border border-gray-200">
+                                  <View className="flex-row flex-wrap">
+                                    {members.map((member, mIdx) => (
+                                      <View key={mIdx} className="mr-2 mb-1">
+                                        <Text className="text-xs text-gray-800">
+                                          {member}{mIdx < members.length - 1 ? "," : ""}
+                                        </Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                </View>
+                              );
+                            })}
                           </View>
                           {participants.length > 4 ? (
                             <TouchableOpacity
                               className="mt-2 self-start"
                               onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}
                             >
-                              <Text className="text-xs text-blue-600">{showingAll ? "Hide players" : "See all players"}</Text>
+                              <Text className="text-xs text-blue-600 font-medium">
+                                {showingAll ? "Show less" : `Show all ${participants.length} teams`}
+                              </Text>
                             </TouchableOpacity>
                           ) : null}
                         </View>
