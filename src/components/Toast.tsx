@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
-import { View, Text, Animated, Easing, Platform } from "react-native";
+import { View, Text, Animated, Easing, Platform, TouchableOpacity } from "react-native";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -40,7 +40,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const show = useCallback(
     (opts: ToastOptions | string) => {
       const o: ToastOptions = typeof opts === "string" ? { message: opts } : opts || { message: "" };
-      const d = o.durationMs ?? 2500;
+      const d = o.durationMs ?? 2000;
       setType(o.type ?? "info");
       setMessage(o.message);
       setVisible(true);
@@ -59,7 +59,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {children}
         {visible ? (
           <Animated.View
-            pointerEvents="none"
+            pointerEvents="box-none"
             style={{
               position: "absolute",
               left: 0,
@@ -71,17 +71,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             }}
             className="px-4"
           >
-            <View
-              className={
-                type === "success"
-                  ? "mx-auto max-w-2xl w-full rounded-lg border border-green-200 bg-green-50 p-4 shadow"
-                  : type === "error"
-                  ? "mx-auto max-w-2xl w-full rounded-lg border border-red-200 bg-red-50 p-4 shadow"
-                  : "mx-auto max-w-2xl w-full rounded-lg border border-blue-200 bg-blue-50 p-4 shadow"
-              }
-            >
-              <Text className={type === "success" ? "text-green-800" : type === "error" ? "text-red-800" : "text-blue-800"}>{message}</Text>
-            </View>
+            <TouchableOpacity activeOpacity={0.8} onPress={hide}>
+              <View
+                className={
+                  type === "success"
+                    ? "mx-auto max-w-2xl w-full rounded-lg border border-green-200 bg-green-50 p-4 shadow"
+                    : type === "error"
+                    ? "mx-auto max-w-2xl w-full rounded-lg border border-red-200 bg-red-50 p-4 shadow"
+                    : "mx-auto max-w-2xl w-full rounded-lg border border-blue-200 bg-blue-50 p-4 shadow"
+                }
+              >
+                <Text className={type === "success" ? "text-green-800" : type === "error" ? "text-red-800" : "text-blue-800"}>{message}</Text>
+              </View>
+            </TouchableOpacity>
           </Animated.View>
         ) : null}
       </View>
