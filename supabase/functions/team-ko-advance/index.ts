@@ -125,25 +125,51 @@ Deno.serve(async (req: Request): Promise<Response> => {
     function fixtureWinner(f: FixtureRow): number | null {
       if (f.entry1_id == null || f.entry2_id == null) return null;
       const subs = matchesByFixture[f.id] || [];
-      if (subs.length === 0) return null;
+      if (subs.length === 0) {
+        console.log(`Fixture ${f.id} has no sub-matches`);
+        return null;
+      }
       let total1 = 0;
       let total2 = 0;
       let hasAnyScore = false;
+      let wins1 = 0;
+      let wins2 = 0;
+      
       for (const m of subs) {
         const p1 = m.entry1_points ?? 0;
         const p2 = m.entry2_points ?? 0;
         if (m.entry1_points != null || m.entry2_points != null) hasAnyScore = true;
         total1 += p1;
         total2 += p2;
+        // Count individual match wins for tiebreaker
+        if (p1 > p2) wins1++;
+        else if (p2 > p1) wins2++;
       }
-      if (!hasAnyScore || total1 === total2) return null;
-      return total1 > total2 ? f.entry1_id : f.entry2_id;
+      
+      if (!hasAnyScore) {
+        console.log(`Fixture ${f.id} has no scores`);
+        return null;
+      }
+      
+      // Primary: total points
+      if (total1 > total2) return f.entry1_id;
+      if (total2 > total1) return f.entry2_id;
+      
+      // Tiebreaker 1: number of individual match wins
+      if (wins1 > wins2) return f.entry1_id;
+      if (wins2 > wins1) return f.entry2_id;
+      
+      // Tiebreaker 2: if still tied, pick entry1 (higher seed)
+      console.log(`Fixture ${f.id} is tied (${total1}-${total2}), using tiebreaker: entry1`);
+      return f.entry1_id;
     }
 
     const updatesByFixture: Record<number, { entry1_id?: number | null; entry2_id?: number | null }> = {};
     let assignments = 0;
 
     // For each adjacent pair of rounds, push winners into next round slots based on bracket order
+    const advanceLog: any[] = [];
+    
     for (let i = 0; i < roundNumbers.length - 1; i++) {
       const curRound = roundNumbers[i];
       const nextRound = roundNumbers[i + 1];
@@ -154,17 +180,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .filter((f) => f.round_number === nextRound)
         .sort((a, b) => a.id - b.id);
 
+      console.log(`Round ${curRound} -> ${nextRound}: ${curFixtures.length} fixtures -> ${nextFixtures.length} fixtures`);
+
       if (nextFixtures.length === 0 || curFixtures.length === 0) continue;
 
       for (let j = 0; j < curFixtures.length; j++) {
         const f = curFixtures[j];
         const winner = fixtureWinner(f);
+        
+        const logEntry = {
+          fixtureIndex: j,
+          fixtureId: f.id,
+          entry1: f.entry1_id,
+          entry2: f.entry2_id,
+          winner,
+          targetIndex: Math.floor(j / 2),
+          slot: j % 2 === 0 ? 'entry1' : 'entry2',
+        };
+        advanceLog.push(logEntry);
+        console.log(`Fixture ${j} (id=${f.id}): ${f.entry1_id} vs ${f.entry2_id} -> winner=${winner}`);
+        
         if (!winner) continue; // skip unfinished or tied fixtures
 
         const nextIndex = Math.floor(j / 2);
         const slotIsFirst = j % 2 === 0;
         const target = nextFixtures[nextIndex];
-        if (!target) continue;
+        if (!target) {
+          console.log(`No target fixture at index ${nextIndex}`);
+          continue;
+        }
 
         const fid = target.id;
         if (!updatesByFixture[fid]) updatesByFixture[fid] = {};
@@ -172,11 +216,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
           if (updatesByFixture[fid].entry1_id !== winner) {
             updatesByFixture[fid].entry1_id = winner;
             assignments++;
+            console.log(`Assigned winner ${winner} to fixture ${fid} entry1`);
           }
         } else {
           if (updatesByFixture[fid].entry2_id !== winner) {
             updatesByFixture[fid].entry2_id = winner;
             assignments++;
+            console.log(`Assigned winner ${winner} to fixture ${fid} entry2`);
           }
         }
       }
@@ -266,7 +312,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response(
       JSON.stringify({ 
         ok: true, 
-        message: `Knockout bracket updated (${assignments} slots set, ${subMatchesCreated} sub-matches created)` 
+        message: `Knockout bracket updated (${assignments} slots set, ${subMatchesCreated} sub-matches created)`,
+        debug: {
+          roundNumbers,
+          advanceLog,
+          fixturesUpdated: fixtureIdsToUpdate.length,
+        }
       }),
       {
         status: 200,
