@@ -240,10 +240,6 @@ export default function NewTournament() {
         setErrRegEnd("Must be after start");
         return;
       }
-      if (regStartDT <= now) {
-        setErrRegStart("Must be in the future");
-        return;
-      }
       if (regEndDT <= now) {
         setErrRegEnd("Must be in the future");
         return;

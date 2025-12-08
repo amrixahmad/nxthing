@@ -363,7 +363,6 @@ export default function ManageCategories() {
       const edt = combineDateTime(regEnd, regEndTime);
       const now = new Date();
       if (!sdt || !edt || sdt >= edt) { setErrRegStart("Must be before end"); setErrRegEnd("Must be after start"); return; }
-      if (sdt <= now) { setErrRegStart("Must be in the future"); return; }
       if (edt <= now) { setErrRegEnd("Must be in the future"); return; }
       if (tournament?.start_date) {
         const ts = new Date(tournament.start_date);

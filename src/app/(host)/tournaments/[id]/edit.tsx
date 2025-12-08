@@ -251,7 +251,6 @@ export default function EditTournament() {
       }
 
       if (regStartDT >= regEndDT) { setErrRegStart("Must be before end"); setErrRegEnd("Must be after start"); return; }
-      if (regStartDT <= now) { setErrRegStart("Must be in the future"); return; }
       if (regEndDT <= now) { setErrRegEnd("Must be in the future"); return; }
       if (regEndDT > startDT) { setErrRegEnd("Must be before tournament start"); return; }
 
