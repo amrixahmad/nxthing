@@ -195,9 +195,9 @@ export default function ManageReferees() {
             Assign non-playing staff who can record scores and mark matches as completed for this tournament.
           </Text>
 
-          <View className="mb-4">
+          <View className="mb-4" style={{ zIndex: 100 }}>
             <Text className="text-sm text-gray-700 mb-1">Search by name or username</Text>
-            <View className="relative">
+            <View style={{ position: 'relative', zIndex: 100 }}>
               <TextInput
                 className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
                 value={searchQuery}
@@ -214,20 +214,45 @@ export default function ManageReferees() {
               )}
               
               {/* Search Results Dropdown */}
-              {showDropdown && searchResults.length > 0 && (
-                <View className="absolute top-14 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-48">
-                  {searchResults.map((profile) => (
+              {(showDropdown && searchResults.length > 0) && (
+                <View 
+                  style={{ 
+                    position: 'absolute', 
+                    top: 52, 
+                    left: 0, 
+                    right: 0, 
+                    zIndex: 1000,
+                    backgroundColor: 'white',
+                    borderWidth: 1,
+                    borderColor: '#D1D5DB',
+                    borderRadius: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 8,
+                    elevation: 8,
+                    maxHeight: 200,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {searchResults.map((profile, index) => (
                     <TouchableOpacity
                       key={profile.id}
-                      className="px-4 py-3 border-b border-gray-100 active:bg-gray-50"
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderBottomWidth: index < searchResults.length - 1 ? 1 : 0,
+                        borderBottomColor: '#E5E7EB',
+                        backgroundColor: 'white',
+                      }}
                       onPress={() => addRefereeFromSearch(profile)}
                       disabled={saving}
                     >
-                      <Text className="text-base text-gray-900">
+                      <Text style={{ fontSize: 15, fontWeight: '500', color: '#111827' }}>
                         {profile.full_name || profile.username || "Unknown"}
                       </Text>
-                      {profile.username && profile.full_name && (
-                        <Text className="text-xs text-gray-500">@{profile.username}</Text>
+                      {profile.username && (
+                        <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>@{profile.username}</Text>
                       )}
                     </TouchableOpacity>
                   ))}
@@ -236,8 +261,26 @@ export default function ManageReferees() {
               
               {/* No results message */}
               {hasSearched && searchResults.length === 0 && !searching && (
-                <View className="absolute top-14 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 p-4">
-                  <Text className="text-sm text-gray-500 text-center">No users found</Text>
+                <View 
+                  style={{ 
+                    position: 'absolute', 
+                    top: 52, 
+                    left: 0, 
+                    right: 0, 
+                    zIndex: 1000,
+                    backgroundColor: 'white',
+                    borderWidth: 1,
+                    borderColor: '#D1D5DB',
+                    borderRadius: 8,
+                    padding: 16,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 8,
+                    elevation: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, color: '#6B7280', textAlign: 'center' }}>No users found</Text>
                 </View>
               )}
             </View>
