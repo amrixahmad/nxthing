@@ -73,9 +73,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
       Deno.env.get("SUPABASE_ANON_KEY") ||
       Deno.env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY") ||
       "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    
+    if (!serviceKey) {
+      console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
+      return new Response(JSON.stringify({ error: "Server configuration error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // User client for auth validation and reads
     const supabase = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: token ? `Bearer ${token}` : "" } },
     });
+    // Service client to bypass RLS for inserts
+    const service = createClient(supabaseUrl, serviceKey);
 
     const userRes = await supabase.auth.getUser(token);
     const user = userRes.data.user;
@@ -137,7 +150,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let lastError: any = null;
     for (let i = 0; i < 5; i++) {
       invite = makeInviteCode(body.team_name, tournamentTitle);
-      const { data: ins, error: insErr } = await supabase
+      const { data: ins, error: insErr } = await service
         .from("entries")
         .insert({
           category_id: body.category_id,
@@ -171,7 +184,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // Add leader as first member
-    const { error: memErr } = await supabase
+    const { error: memErr } = await service
       .from("entry_members")
       .insert({ entry_id: entryId, profile_id: user.id });
     if (memErr) {
