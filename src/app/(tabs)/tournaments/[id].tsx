@@ -42,6 +42,7 @@ export default function TournamentDetails() {
       {
         id: number;
         payment_status: string;
+        myPaymentStatus?: string | null;
         invite_code?: string | null;
         team_name?: string | null;
         team_slogan?: string | null;
@@ -50,6 +51,7 @@ export default function TournamentDetails() {
     >
   >({});
   const [teamSizeByEntry, setTeamSizeByEntry] = useState<Record<number, number>>({});
+  const [teamMembersByEntry, setTeamMembersByEntry] = useState<Record<number, Array<{ profile_id: string; display_name: string | null; payment_status: string | null }>>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
   const [statsByCategory, setStatsByCategory] = useState<Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }>>({});
   const [participantsByCategory, setParticipantsByCategory] = useState<Record<number, string[]>>({});
@@ -110,18 +112,28 @@ export default function TournamentDetails() {
     setTour(details);
 
     if (session?.user) {
-      const { data: entries } = await supabase
+      // Fetch entries created by user
+      const { data: createdEntries } = await supabase
         .from("entries")
         .select(
           "id, payment_status, invite_code, team_name, team_slogan, team_logo_url, category_id, category:category_id(tournament_id)"
         )
         .eq("created_by", session.user.id);
 
+      // Fetch entries where user is a member
+      const { data: memberEntries } = await supabase
+        .from("entry_members")
+        .select(
+          "entry_id, payment_status, entry:entry_id(id, payment_status, invite_code, team_name, team_slogan, team_logo_url, category_id, category:category_id(tournament_id))"
+        )
+        .eq("profile_id", session.user.id);
+
       const map: Record<
         number,
         {
           id: number;
           payment_status: string;
+          myPaymentStatus?: string | null;
           invite_code?: string | null;
           team_name?: string | null;
           team_slogan?: string | null;
@@ -129,9 +141,11 @@ export default function TournamentDetails() {
         }
       > = {};
       const sizeMap: Record<number, number> = {};
-      const rows: any[] = (entries as any[]) || [];
+      const membersMap: Record<number, Array<{ profile_id: string; display_name: string | null; payment_status: string | null }>> = {};
 
-      for (const r of rows) {
+      // Process created entries
+      const createdRows: any[] = (createdEntries as any[]) || [];
+      for (const r of createdRows) {
         const cat = Array.isArray(r.category) ? r.category[0] : r.category;
         if (cat?.tournament_id === tid) {
           map[r.category_id] = {
@@ -142,17 +156,72 @@ export default function TournamentDetails() {
             team_slogan: r.team_slogan ?? null,
             team_logo_url: r.team_logo_url ?? null,
           };
+        }
+      }
 
-          const { count } = await supabase
-            .from("entry_members")
-            .select("profile_id", { count: "exact", head: true })
-            .eq("entry_id", r.id);
-          if (typeof count === "number") sizeMap[r.id] = count;
+      // Process member entries (user joined but didn't create)
+      const memberRows: any[] = (memberEntries as any[]) || [];
+      for (const m of memberRows) {
+        let e = m.entry;
+        if (Array.isArray(e)) e = e[0];
+        if (!e) continue;
+        const cat = Array.isArray(e.category) ? e.category[0] : e.category;
+        if (cat?.tournament_id === tid) {
+          // Only add if not already in map (creator takes precedence)
+          if (!map[e.category_id]) {
+            map[e.category_id] = {
+              id: e.id,
+              payment_status: e.payment_status,
+              myPaymentStatus: m.payment_status,
+              invite_code: e.invite_code ?? null,
+              team_name: e.team_name ?? null,
+              team_slogan: e.team_slogan ?? null,
+              team_logo_url: e.team_logo_url ?? null,
+            };
+          } else {
+            // Update myPaymentStatus for creator
+            map[e.category_id].myPaymentStatus = m.payment_status;
+          }
+        }
+      }
+
+      // Fetch team sizes and members for all entries
+      const entryIds = Object.values(map).map((e) => e.id);
+      if (entryIds.length > 0) {
+        const { data: allMembers } = await supabase
+          .from("entry_members")
+          .select("entry_id, payment_status, profile_id, display_name, profile:profile_id(full_name, username)")
+          .in("entry_id", entryIds);
+
+        if (allMembers) {
+          for (const m of allMembers as any[]) {
+            const eid = m.entry_id as number;
+            if (!sizeMap[eid]) sizeMap[eid] = 0;
+            sizeMap[eid]++;
+
+            if (!membersMap[eid]) membersMap[eid] = [];
+            const profile = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+            const displayName = m.display_name || profile?.full_name || profile?.username || `Player ${m.profile_id?.slice(0, 8)}`;
+            membersMap[eid].push({
+              profile_id: m.profile_id,
+              display_name: displayName,
+              payment_status: m.payment_status,
+            });
+
+            // Update myPaymentStatus if this is the current user
+            if (m.profile_id === session.user.id) {
+              const catId = Object.keys(map).find((k) => map[Number(k)].id === eid);
+              if (catId) {
+                map[Number(catId)].myPaymentStatus = m.payment_status;
+              }
+            }
+          }
         }
       }
 
       setEntryByCategory(map);
       setTeamSizeByEntry(sizeMap);
+      setTeamMembersByEntry(membersMap);
     }
 
     if (details) {
@@ -454,9 +523,15 @@ export default function TournamentDetails() {
                 const preview = showingAll ? participants : participants.slice(0, 4);
                 const teamSize = meta ? teamSizeByEntry[meta.id] : undefined;
 
+                const teamMembers = meta ? teamMembersByEntry[meta.id] : undefined;
+                const isFree = !c.registration_fee || Number(c.registration_fee) === 0;
+                const myStatus = meta?.myPaymentStatus;
+                const hasRegistered = myStatus === "paid" || myStatus === "waived";
+
                 let actionNode = null;
                 if (meta) {
-                  if (meta.payment_status === "unpaid") {
+                  // Show register button only if user hasn't registered yet
+                  if (!hasRegistered && meta.payment_status === "unpaid") {
                     let inviteUrlToShow = "";
                     const inviteCode = (meta as any).invite_code as string | null | undefined;
                     if (inviteCode) {
@@ -471,7 +546,6 @@ export default function TournamentDetails() {
                       inviteUrlToShow = createdInviteUrl;
                     }
 
-                    const isFree = !c.registration_fee || Number(c.registration_fee) === 0;
                     actionNode = (
                       <View>
                         <TouchableOpacity
@@ -520,9 +594,39 @@ export default function TournamentDetails() {
                       </View>
                     );
                   } else {
+                    // User has registered - show status and team members
                     actionNode = (
-                      <View className="px-3 py-2 rounded-lg bg-green-100">
-                        <Text className="text-green-800">Registered</Text>
+                      <View>
+                        <View className="px-3 py-2 rounded-lg bg-green-100 mb-3">
+                          <Text className="text-green-800 text-center font-semibold">
+                            {isFree ? "✓ You are registered" : "✓ You have paid"}
+                          </Text>
+                        </View>
+                        
+                        {/* Team Members List */}
+                        {teamMembers && teamMembers.length > 0 && (
+                          <View className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                            <Text className="text-sm font-medium text-gray-700 mb-2">Team Members</Text>
+                            {teamMembers.map((member) => (
+                              <View key={member.profile_id} className="flex-row items-center justify-between py-1.5 border-b border-gray-100 last:border-b-0">
+                                <Text className="text-sm text-gray-800">
+                                  {member.display_name}
+                                  {member.profile_id === session?.user?.id ? " (You)" : ""}
+                                </Text>
+                                <View className={`px-2 py-0.5 rounded ${(member.payment_status === "paid" || member.payment_status === "waived") ? "bg-green-100" : "bg-yellow-100"}`}>
+                                  <Text className={`text-xs ${(member.payment_status === "paid" || member.payment_status === "waived") ? "text-green-700" : "text-yellow-700"}`}>
+                                    {(member.payment_status === "paid" || member.payment_status === "waived") ? (isFree ? "Registered" : "Paid") : (isFree ? "Pending" : "Unpaid")}
+                                  </Text>
+                                </View>
+                              </View>
+                            ))}
+                            {c.members_per_team_min && (
+                              <Text className="text-xs text-gray-500 mt-2">
+                                {teamMembers.filter(m => m.payment_status === "paid" || m.payment_status === "waived").length}/{c.members_per_team_min} minimum members {isFree ? "registered" : "paid"}
+                              </Text>
+                            )}
+                          </View>
+                        )}
                       </View>
                     );
                   }
