@@ -120,12 +120,10 @@ export default function TournamentDetails() {
         )
         .eq("created_by", session.user.id);
 
-      // Fetch entries where user is a member
-      const { data: memberEntries } = await supabase
+      // Fetch entries where user is a member (simpler query)
+      const { data: memberRows } = await supabase
         .from("entry_members")
-        .select(
-          "entry_id, payment_status, entry:entry_id(id, payment_status, invite_code, team_name, team_slogan, team_logo_url, category_id, category:category_id(tournament_id))"
-        )
+        .select("entry_id, payment_status")
         .eq("profile_id", session.user.id);
 
       const map: Record<
@@ -142,6 +140,12 @@ export default function TournamentDetails() {
       > = {};
       const sizeMap: Record<number, number> = {};
       const membersMap: Record<number, Array<{ profile_id: string; display_name: string | null; payment_status: string | null }>> = {};
+      const myPaymentByEntryId: Record<number, string | null> = {};
+
+      // Store member payment status by entry_id
+      for (const m of (memberRows as any[]) || []) {
+        myPaymentByEntryId[m.entry_id] = m.payment_status;
+      }
 
       // Process created entries
       const createdRows: any[] = (createdEntries as any[]) || [];
@@ -151,6 +155,7 @@ export default function TournamentDetails() {
           map[r.category_id] = {
             id: r.id,
             payment_status: r.payment_status,
+            myPaymentStatus: myPaymentByEntryId[r.id] ?? null,
             invite_code: r.invite_code ?? null,
             team_name: r.team_name ?? null,
             team_slogan: r.team_slogan ?? null,
@@ -159,28 +164,29 @@ export default function TournamentDetails() {
         }
       }
 
-      // Process member entries (user joined but didn't create)
-      const memberRows: any[] = (memberEntries as any[]) || [];
-      for (const m of memberRows) {
-        let e = m.entry;
-        if (Array.isArray(e)) e = e[0];
-        if (!e) continue;
-        const cat = Array.isArray(e.category) ? e.category[0] : e.category;
-        if (cat?.tournament_id === tid) {
-          // Only add if not already in map (creator takes precedence)
-          if (!map[e.category_id]) {
+      // Fetch entries where user is a member but not creator
+      const memberEntryIds = Object.keys(myPaymentByEntryId).map(Number);
+      const createdEntryIds = createdRows.map((r: any) => r.id);
+      const joinedEntryIds = memberEntryIds.filter((id) => !createdEntryIds.includes(id));
+
+      if (joinedEntryIds.length > 0) {
+        const { data: joinedEntries } = await supabase
+          .from("entries")
+          .select("id, payment_status, invite_code, team_name, team_slogan, team_logo_url, category_id, category:category_id(tournament_id)")
+          .in("id", joinedEntryIds);
+
+        for (const e of (joinedEntries as any[]) || []) {
+          const cat = Array.isArray(e.category) ? e.category[0] : e.category;
+          if (cat?.tournament_id === tid && !map[e.category_id]) {
             map[e.category_id] = {
               id: e.id,
               payment_status: e.payment_status,
-              myPaymentStatus: m.payment_status,
+              myPaymentStatus: myPaymentByEntryId[e.id] ?? null,
               invite_code: e.invite_code ?? null,
               team_name: e.team_name ?? null,
               team_slogan: e.team_slogan ?? null,
               team_logo_url: e.team_logo_url ?? null,
             };
-          } else {
-            // Update myPaymentStatus for creator
-            map[e.category_id].myPaymentStatus = m.payment_status;
           }
         }
       }
