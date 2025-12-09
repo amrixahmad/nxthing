@@ -86,7 +86,11 @@ export default function RegisterAndPay() {
         const { data, error } = await supabase.functions.invoke("team-join", {
           body: { invite_code: invite },
         });
-        if (error) throw error;
+        // Check for actual error in response data first
+        if ((data as any)?.error) {
+          throw new Error((data as any).error);
+        }
+        if (error && !(data as any)?.entry_id) throw error;
         const entryId = Number((data as any)?.entry_id || 0);
         if (entryId) {
           setJoinedEntryId(entryId);
@@ -259,15 +263,18 @@ export default function RegisterAndPay() {
       const { data, error } = await supabase.functions.invoke("stripe-checkout", {
         body: { entry_id: joinedEntryId },
       });
-      if (error) {
+      // Check for actual error in response data first
+      if ((data as any)?.error) {
+        throw new Error((data as any).error);
+      }
+      if (error && !(data as any)?.url) {
         // Try to extract error message from response
-        const errMsg = (data as any)?.error || error.message || "Payment initialization failed";
+        const errMsg = error.message || "Payment initialization failed";
         throw new Error(errMsg);
       }
       const url = (data as any)?.url as string | undefined;
       if (!url) {
-        const errMsg = (data as any)?.error || "No checkout URL returned";
-        throw new Error(errMsg);
+        throw new Error("No checkout URL returned");
       }
       if (Platform.OS === "web") {
         window.location.href = url;
@@ -313,9 +320,11 @@ export default function RegisterAndPay() {
         <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           {params.invite ? (
             <>
-              <Text className="text-lg font-semibold text-gray-900 mb-2">Join Team & Pay</Text>
+              <Text className="text-lg font-semibold text-gray-900 mb-2">
+                {!category?.registration_fee || category.registration_fee === 0 ? "Join Team" : "Join Team & Pay"}
+              </Text>
               <Text className="text-sm text-gray-700 mb-4">
-                {joining ? "Validating invite..." : teamName ? `You are registering to join ${teamName}.` : "Invite recognized. You can proceed to payment."}
+                {joining ? "Validating invite..." : teamName ? `You are registering to join ${teamName}.` : "Invite recognized. You can proceed."}
               </Text>
 
               {/* Tournament & Category Info */}
@@ -398,9 +407,11 @@ export default function RegisterAndPay() {
               )}
 
               {/* Show payment status or pay button */}
-              {myPaymentStatus === "paid" ? (
+              {myPaymentStatus === "paid" || myPaymentStatus === "waived" ? (
                 <View className="mt-4 p-4 rounded-lg bg-green-50 border border-green-200">
-                  <Text className="text-green-800 text-center font-semibold">✓ You have already paid</Text>
+                  <Text className="text-green-800 text-center font-semibold">
+                    {!category?.registration_fee || category.registration_fee === 0 ? "✓ You are registered" : "✓ You have already paid"}
+                  </Text>
                   <Text className="text-green-700 text-center text-sm mt-1">
                     Your registration is complete. Check "My Entries" for team status.
                   </Text>
@@ -440,7 +451,7 @@ export default function RegisterAndPay() {
                     disabled={submitting || joining || !agreedToTerms}
                   >
                     <Text className={`text-center font-semibold ${submitting || joining || !agreedToTerms ? "text-gray-500" : "text-white"}`}>
-                      {submitting || processing ? "Processing..." : "Join Team & Pay"}
+                      {submitting || processing ? "Processing..." : !category?.registration_fee || category.registration_fee === 0 ? "Confirm Registration" : "Join Team & Pay"}
                     </Text>
                   </TouchableOpacity>
                   {!agreedToTerms && (
