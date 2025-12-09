@@ -186,15 +186,15 @@ export default function RegisterAndPay() {
                   .maybeSingle()
               : Promise.resolve({ data: null } as any),
           ]);
-          if (entry?.payment_status === "paid") {
+          if (entry?.payment_status === "paid" || entry?.payment_status === "waived") {
             setNotice("success");
-            setNoticeText("Payment confirmed. Entry accepted.");
+            setNoticeText(entry.payment_status === "waived" ? "Registration confirmed!" : "Payment confirmed. Entry accepted.");
             setProcessing(false);
             return;
           }
-          if (member?.payment_status === "paid") {
+          if (member?.payment_status === "paid" || member?.payment_status === "waived") {
             setNotice("success");
-            setNoticeText("Your payment was received. Waiting for teammates to complete payment.");
+            setNoticeText(member.payment_status === "waived" ? "Registration confirmed!" : "Your payment was received. Waiting for teammates to complete payment.");
             setProcessing(false);
             return;
           }

@@ -223,9 +223,9 @@ export default function MyEntries() {
             .eq("profile_id", session.user.id)
             .maybeSingle();
           
-          if (memberData?.payment_status === "paid") {
+          if (memberData?.payment_status === "paid" || memberData?.payment_status === "waived") {
             setNotice("success");
-            setNoticeText("Payment confirmed!");
+            setNoticeText(memberData.payment_status === "waived" ? "Registration confirmed!" : "Payment confirmed!");
             setHighlightId(eid);
             await load();
             return;
@@ -237,9 +237,9 @@ export default function MyEntries() {
             .select("payment_status,status")
             .eq("id", eid)
             .maybeSingle();
-          if (entryData?.payment_status === "paid") {
+          if (entryData?.payment_status === "paid" || entryData?.payment_status === "waived") {
             setNotice("success");
-            setNoticeText("Payment confirmed. Entry accepted.");
+            setNoticeText(entryData.payment_status === "waived" ? "Registration confirmed!" : "Payment confirmed. Entry accepted.");
             setHighlightId(eid);
             await load();
             return;
