@@ -145,13 +145,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
         }
     }
 
-    // Load eligible entries
+    // Load eligible entries (paid or waived for free tournaments)
     const { data: entries, error: eErr } = await supabase
       .from("entries")
       .select("id")
       .eq("category_id", categoryId)
       .eq("status", "accepted")
-      .eq("payment_status", "paid");
+      .in("payment_status", ["paid", "waived"]);
     if (eErr) throw eErr;
     const ids = (entries as Entry[]).map((e) => e.id);
 
