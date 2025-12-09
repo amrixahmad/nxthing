@@ -310,7 +310,11 @@ export default function TournamentDetails() {
           team_logo_url: logo || null,
         },
       });
-      if (error) throw error;
+      if (error) {
+        // Extract error message from edge function response
+        const errMsg = (data as any)?.error || error.message || "Could not create team";
+        throw new Error(errMsg);
+      }
       const eid = Number((data as any)?.entry_id || 0);
       const code = String((data as any)?.invite_code || "");
       const inviteUrl = String((data as any)?.invite_url || "");
