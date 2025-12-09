@@ -182,15 +182,32 @@ export default function MyEntries() {
     async function run() {
       const pay = params.payment as string | undefined;
       const eid = Number(params.entry_id ?? 0);
-      if (pay === "success" && eid) {
+      if (pay === "success" && eid && session?.user?.id) {
         setNotice(null);
         for (let i = 0; i < 20; i++) {
-          const { data } = await supabase
+          // Check member-level payment status first (for team payments)
+          const { data: memberData } = await supabase
+            .from("entry_members")
+            .select("payment_status")
+            .eq("entry_id", eid)
+            .eq("profile_id", session.user.id)
+            .maybeSingle();
+          
+          if (memberData?.payment_status === "paid") {
+            setNotice("success");
+            setNoticeText("Payment confirmed!");
+            setHighlightId(eid);
+            await load();
+            return;
+          }
+          
+          // Fallback: check entry-level payment status (for individual entries)
+          const { data: entryData } = await supabase
             .from("entries")
             .select("payment_status,status")
             .eq("id", eid)
             .maybeSingle();
-          if (data?.payment_status === "paid") {
+          if (entryData?.payment_status === "paid") {
             setNotice("success");
             setNoticeText("Payment confirmed. Entry accepted.");
             setHighlightId(eid);
@@ -205,7 +222,7 @@ export default function MyEntries() {
     }
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.payment, params.entry_id]);
+  }, [params.payment, params.entry_id, session?.user?.id]);
 
   async function pay(entryId: number) {
     try {

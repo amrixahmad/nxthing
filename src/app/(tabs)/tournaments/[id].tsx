@@ -68,12 +68,12 @@ export default function TournamentDetails() {
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const isOpen = (() => {
     if (!tour) return false;
-    // Registration is open if status is 'registration_open' OR we're within the window
+    // Registration is open if status is 'registration_open' AND we're within the window
     const s = tour.registration_start_date ? new Date(tour.registration_start_date) : null;
     const e = tour.registration_end_date ? new Date(tour.registration_end_date) : null;
     const now = new Date();
     const inWindow = !!(s && e && now >= s && now <= e);
-    return tour.status === "registration_open" || inWindow;
+    return tour.status === "registration_open" && inWindow;
   })();
 
   const onRefresh = async () => {
