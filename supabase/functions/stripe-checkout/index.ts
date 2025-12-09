@@ -106,15 +106,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Authorization: player who created, a member of the entry, or organizer
     const isCreator = entry.created_by === user.id;
     const isOrganizer = tournament.organizer_id === user.id;
+    // For team members (including creator), fetch their payment status
     let isMember = false;
-    if (!isCreator && !isOrganizer) {
+    let memberPaymentStatus: string | null = null;
+    {
       const { data: mem } = await supabase
         .from("entry_members")
-        .select("profile_id")
+        .select("profile_id, payment_status")
         .eq("entry_id", body.entry_id)
         .eq("profile_id", user.id)
         .maybeSingle();
       isMember = !!mem;
+      memberPaymentStatus = (mem as any)?.payment_status ?? null;
     }
     if (!isCreator && !isOrganizer && !isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -134,11 +137,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    if (entry.payment_status && entry.payment_status !== "unpaid") {
-      return new Response(JSON.stringify({ error: "Entry already paid/refunded" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // For team members (including creator), check member-level payment status
+    // For organizers (non-members), check entry-level payment status
+    if (isMember) {
+      // Team member (or creator who is also a member): check if THIS member has already paid
+      if (memberPaymentStatus && memberPaymentStatus !== "unpaid") {
+        return new Response(JSON.stringify({ error: "You have already paid for this entry" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (isOrganizer) {
+      // Organizer (not a member): check entry-level payment status
+      if (entry.payment_status && entry.payment_status !== "unpaid") {
+        return new Response(JSON.stringify({ error: "Entry already paid/refunded" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const fee: number = Number((category?.registration_fee ?? 0) as number);

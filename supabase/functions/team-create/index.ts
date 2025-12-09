@@ -116,10 +116,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
+    // Check if user already has an entry in this category
+    const { data: existingEntry } = await supabase
+      .from("entries")
+      .select("id, team_name")
+      .eq("category_id", body.category_id)
+      .eq("created_by", user.id)
+      .maybeSingle();
+    if (existingEntry) {
+      return new Response(JSON.stringify({ error: `You already have a team in this category: ${existingEntry.team_name || "Unnamed Team"}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Create entry (team) with unique invite_code
     const tournamentTitle = category.tournament?.title || "Tournament";
     let invite = "";
     let entryId: number | null = null;
+    let lastError: any = null;
     for (let i = 0; i < 5; i++) {
       invite = makeInviteCode(body.team_name, tournamentTitle);
       const { data: ins, error: insErr } = await supabase
@@ -140,9 +155,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
         entryId = ins.id as number;
         break;
       }
+      lastError = insErr;
+      // If it's not an invite_code collision, don't retry
+      if (insErr && !insErr.message?.includes("invite_code")) {
+        break;
+      }
     }
     if (!entryId) {
-      return new Response(JSON.stringify({ error: "Failed to create team" }), {
+      console.error("Failed to create team entry:", lastError);
+      const errMsg = lastError?.message || "Failed to create team";
+      return new Response(JSON.stringify({ error: errMsg }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
