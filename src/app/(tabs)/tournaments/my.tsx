@@ -35,6 +35,12 @@ type EntryRow = {
   // Team member stats
   paidMembersCount?: number;
   totalMembersCount?: number;
+  // Team members list
+  members?: Array<{
+    profile_id: string;
+    display_name: string | null;
+    payment_status: string | null;
+  }>;
 };
 
 export default function MyEntries() {
@@ -143,21 +149,33 @@ export default function MyEntries() {
         upsert(e, isCreator ? "captain" : "player", memberPaymentStatus);
       });
 
-      // Fetch team member counts for each entry
+      // Fetch team member counts and details for each entry
       const entryIds = Object.keys(byId).map(Number);
       if (entryIds.length > 0) {
         const { data: allMembers } = await supabase
           .from("entry_members")
-          .select("entry_id, payment_status")
+          .select("entry_id, payment_status, profile_id, display_name, profile:profile_id(full_name, username)")
           .in("entry_id", entryIds);
         
         if (allMembers) {
           const countsByEntry: Record<number, { total: number; paid: number }> = {};
+          const membersByEntry: Record<number, Array<{ profile_id: string; display_name: string | null; payment_status: string | null }>> = {};
+          
           allMembers.forEach((m: any) => {
             const eid = m.entry_id as number;
             if (!countsByEntry[eid]) countsByEntry[eid] = { total: 0, paid: 0 };
+            if (!membersByEntry[eid]) membersByEntry[eid] = [];
             countsByEntry[eid].total++;
-            if (m.payment_status === "paid") countsByEntry[eid].paid++;
+            if (m.payment_status === "paid" || m.payment_status === "waived") countsByEntry[eid].paid++;
+            
+            // Get display name from profile or display_name field
+            const profile = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+            const displayName = m.display_name || profile?.full_name || profile?.username || `Player ${m.profile_id?.slice(0, 8)}`;
+            membersByEntry[eid].push({
+              profile_id: m.profile_id,
+              display_name: displayName,
+              payment_status: m.payment_status,
+            });
           });
           
           Object.keys(byId).forEach((idStr) => {
@@ -165,6 +183,9 @@ export default function MyEntries() {
             if (countsByEntry[id]) {
               byId[id].totalMembersCount = countsByEntry[id].total;
               byId[id].paidMembersCount = countsByEntry[id].paid;
+            }
+            if (membersByEntry[id]) {
+              byId[id].members = membersByEntry[id];
             }
           });
         }
@@ -374,6 +395,26 @@ export default function MyEntries() {
                             style={{ width: `${Math.min(100, (e.paidMembersCount / (e.category?.members_per_team_min || e.totalMembersCount)) * 100)}%` }}
                           />
                         </View>
+                      </View>
+                    )}
+                    
+                    {/* Team Members List */}
+                    {e.members && e.members.length > 0 && (
+                      <View className="mt-3 pt-3 border-t border-gray-200">
+                        <Text className="text-xs font-medium text-gray-700 mb-2">Team Members</Text>
+                        {e.members.map((member) => (
+                          <View key={member.profile_id} className="flex-row items-center justify-between py-1">
+                            <Text className="text-xs text-gray-800">
+                              {member.display_name}
+                              {member.profile_id === session?.user?.id ? " (You)" : ""}
+                            </Text>
+                            <View className={`px-2 py-0.5 rounded ${(member.payment_status === "paid" || member.payment_status === "waived") ? "bg-green-100" : "bg-yellow-100"}`}>
+                              <Text className={`text-xs ${(member.payment_status === "paid" || member.payment_status === "waived") ? "text-green-700" : "text-yellow-700"}`}>
+                                {(member.payment_status === "paid" || member.payment_status === "waived") ? (isFree ? "Registered" : "Paid") : (isFree ? "Pending" : "Unpaid")}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
                       </View>
                     )}
                   </View>
