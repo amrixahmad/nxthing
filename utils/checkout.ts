@@ -23,10 +23,19 @@ export async function startCheckout(entryId: number, opts?: CheckoutOptions) {
   const { data, error } = await supabase.functions.invoke("stripe-checkout", { body });
   if (error) throw new Error(edgeErrorMessage(error));
   const url = (data as any)?.url as string | undefined;
+  const isFree = (data as any)?.free === true;
   if (!url) throw new Error("No checkout URL returned");
+  
+  // For free tournaments, redirect directly to success page
   if (Platform.OS === "web") {
     window.location.href = url;
   } else {
+    // For native, if free just navigate (no browser needed), otherwise open Stripe
+    if (isFree) {
+      // On native, we can't easily navigate to the URL, so just return
+      // The caller should handle refreshing the UI
+      return;
+    }
     await WebBrowser.openBrowserAsync(url);
   }
 }

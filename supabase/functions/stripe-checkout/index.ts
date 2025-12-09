@@ -158,19 +158,70 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const fee: number = Number((category?.registration_fee ?? 0) as number);
-    if (!fee || isNaN(fee)) {
+    if (isNaN(fee) || fee < 0) {
       return new Response(JSON.stringify({ error: "Invalid registration fee" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (fee < 2) {
-      return new Response(JSON.stringify({ error: "Minimum registration fee is RM 2 (Stripe requirement)" }), {
+    
+    const currency = (entry.payment_currency || "myr").toLowerCase();
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const service = createClient(supabaseUrl, serviceKey);
+
+    // Handle FREE tournaments (fee = 0): skip Stripe, mark as paid immediately
+    if (fee === 0) {
+      // Mark member as paid (waived)
+      if (isMember) {
+        await service
+          .from("entry_members")
+          .update({
+            payment_status: "waived",
+            payment_amount: 0,
+            payment_currency: currency,
+            paid_at: new Date().toISOString(),
+          })
+          .eq("entry_id", entry.id)
+          .eq("profile_id", user.id);
+      }
+
+      // Check if team has minimum required paid/waived members -> accept entry
+      const { data: cat } = await service
+        .from("tournament_categories")
+        .select("members_per_team_min")
+        .eq("id", category.id)
+        .maybeSingle();
+      const minMembers = Number(cat?.members_per_team_min || 1);
+
+      const { count: paidCount } = await service
+        .from("entry_members")
+        .select("profile_id", { count: "exact", head: true })
+        .eq("entry_id", entry.id)
+        .in("payment_status", ["paid", "waived"]);
+
+      if (typeof paidCount === "number" && paidCount >= minMembers) {
+        await service
+          .from("entries")
+          .update({ payment_status: "waived", status: "accepted", paid_at: new Date().toISOString() })
+          .eq("id", entry.id);
+      }
+
+      // Return success without Stripe redirect
+      const defaultBase = Deno.env.get("CHECKOUT_BASE_URL") || req.headers.get("Origin") || "http://localhost:8082";
+      const successUrl = `${defaultBase}/tournaments/my?payment=success&entry_id=${entry.id}`;
+      return new Response(JSON.stringify({ url: successUrl, free: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // For paid tournaments, enforce minimum fee
+    if (fee < 1) {
+      return new Response(JSON.stringify({ error: "Minimum registration fee is RM 1" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const currency = (entry.payment_currency || "myr").toLowerCase();
 
     // Capacity check (MVP: first-come-first-served; no waitlist)
     const maxTeams = Number(category.max_teams ?? 0);
