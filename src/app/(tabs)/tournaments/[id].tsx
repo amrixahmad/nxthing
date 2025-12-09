@@ -398,7 +398,8 @@ export default function TournamentDetails() {
           ...m,
           [categoryId]: {
             id: eid,
-            payment_status: "unpaid",
+            payment_status: "pending",
+            myPaymentStatus: "unpaid",
             invite_code: code || null,
             team_name: name,
             team_slogan: slogan || null,
@@ -537,7 +538,9 @@ export default function TournamentDetails() {
                 let actionNode = null;
                 if (meta) {
                   // Show register button only if user hasn't registered yet
-                  if (!hasRegistered && meta.payment_status === "unpaid") {
+                  // Entry payment_status can be "unpaid" or "pending" before payment
+                  const entryNotPaid = meta.payment_status === "unpaid" || meta.payment_status === "pending";
+                  if (!hasRegistered && entryNotPaid) {
                     let inviteUrlToShow = "";
                     const inviteCode = (meta as any).invite_code as string | null | undefined;
                     if (inviteCode) {
@@ -600,7 +603,18 @@ export default function TournamentDetails() {
                       </View>
                     );
                   } else {
-                    // User has registered - show status and team members
+                    // User has registered - show status, team members, and invite link
+                    const inviteCode = (meta as any).invite_code as string | null | undefined;
+                    let registeredInviteUrl = "";
+                    if (inviteCode) {
+                      if (Platform.OS === "web" && typeof window !== "undefined") {
+                        registeredInviteUrl = `${window.location.origin}/tournaments/register?invite=${inviteCode}`;
+                      } else {
+                        registeredInviteUrl = `/tournaments/register?invite=${inviteCode}`;
+                      }
+                    }
+                    const teamIsFull = c.members_per_team_max && teamMembers && teamMembers.length >= c.members_per_team_max;
+                    
                     actionNode = (
                       <View>
                         <View className="px-3 py-2 rounded-lg bg-green-100 mb-3">
@@ -631,6 +645,35 @@ export default function TournamentDetails() {
                                 {teamMembers.filter(m => m.payment_status === "paid" || m.payment_status === "waived").length}/{c.members_per_team_min} minimum members {isFree ? "registered" : "paid"}
                               </Text>
                             )}
+                          </View>
+                        )}
+                        
+                        {/* Invite Link - show if team is not full and registration is open */}
+                        {registeredInviteUrl && !teamIsFull && isOpen && (
+                          <View className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                            <Text className="text-sm font-medium text-blue-900 mb-2">Invite teammates</Text>
+                            <Text className="text-xs text-blue-700 mb-2">Share this link with your teammates:</Text>
+                            <View className="bg-white rounded-lg p-2 border border-blue-200">
+                              <Text className="text-xs text-blue-900 break-all" selectable numberOfLines={2}>
+                                {registeredInviteUrl}
+                              </Text>
+                            </View>
+                            {Platform.OS === "web" ? (
+                              <TouchableOpacity
+                                className="mt-3 rounded-lg py-2 bg-blue-600 active:bg-blue-700"
+                                onPress={async () => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                                    try {
+                                      await navigator.clipboard.writeText(registeredInviteUrl);
+                                    } catch {
+                                      // ignore copy errors
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text className="text-center text-sm font-semibold text-white">Copy Invite Link</Text>
+                              </TouchableOpacity>
+                            ) : null}
                           </View>
                         )}
                       </View>
