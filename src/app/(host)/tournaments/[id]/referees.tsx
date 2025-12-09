@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
@@ -20,6 +20,13 @@ type RefRow = {
   } | null;
 };
 
+type SearchResult = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  email?: string | null;
+};
+
 export default function ManageReferees() {
   const { session } = useSession();
   const toast = useToast();
@@ -30,7 +37,65 @@ export default function ManageReferees() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refs, setRefs] = useState<RefRow[]>([]);
-  const [emailInput, setEmailInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced search function
+  const searchProfiles = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, username")
+        .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
+        .limit(10);
+
+      if (error) throw error;
+      
+      // Filter out users who are already referees
+      const existingIds = refs.map(r => r.profile_id);
+      const filtered = ((data as SearchResult[]) || []).filter(p => !existingIds.includes(p.id));
+      
+      setSearchResults(filtered);
+      setShowDropdown(filtered.length > 0);
+      setHasSearched(true);
+    } catch (e) {
+      console.error("Search error:", e);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [refs]);
+
+  // Handle search input change with debounce
+  function handleSearchChange(text: string) {
+    setSearchQuery(text);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (text.length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      setHasSearched(false);
+      return;
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      searchProfiles(text);
+    }, 300);
+  }
 
   async function load() {
     if (!tid || !session?.user) return;
@@ -68,26 +133,13 @@ export default function ManageReferees() {
     if (tid && session?.user) load();
   }, [tid, session?.user?.id]);
 
-  async function addReferee() {
-    const raw = emailInput.trim();
-    if (!raw) {
-      Alert.alert("Email required", "Enter the referee's account email.");
-      return;
-    }
+  async function addRefereeFromSearch(profile: SearchResult) {
     setSaving(true);
+    setShowDropdown(false);
     try {
-      const { data, error } = await supabase.rpc("resolve_profile_by_email", { p_email: raw });
-      if (error) throw error;
-      const row = (data as any[] | null)?.[0];
-      if (!row) {
-        Alert.alert("Not found", "No user found with that email.");
-        return;
-      }
-      const profileId = row.profile_id as string;
-
       const { error: iErr } = await supabase
         .from("tournament_referees")
-        .insert({ tournament_id: tid, profile_id: profileId });
+        .insert({ tournament_id: tid, profile_id: profile.id });
       if (iErr) {
         const msg = String((iErr as any)?.message || "");
         if (msg.includes("duplicate key value")) {
@@ -97,7 +149,9 @@ export default function ManageReferees() {
         throw iErr;
       }
 
-      setEmailInput("");
+      setSearchQuery("");
+      setSearchResults([]);
+      setHasSearched(false);
       await load();
       toast.show({ type: "success", message: "Referee added" });
     } catch (e: any) {
@@ -142,25 +196,52 @@ export default function ManageReferees() {
           </Text>
 
           <View className="mb-4">
-            <Text className="text-sm text-gray-700 mb-1">Add referee by email</Text>
-            <View className="flex-row items-center">
+            <Text className="text-sm text-gray-700 mb-1">Search by name or username</Text>
+            <View className="relative">
               <TextInput
-                className="flex-1 border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
-                value={emailInput}
-                onChangeText={setEmailInput}
-                placeholder="referee@example.com"
+                className="border border-gray-300 rounded-lg p-3 text-base text-gray-900 bg-white"
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                placeholder="Type name or username..."
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
-                keyboardType="email-address"
+                onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
               />
-              <TouchableOpacity
-                className={`ml-2 px-4 py-3 rounded-lg ${saving ? "bg-gray-300" : "bg-blue-600 active:bg-blue-700"}`}
-                onPress={addReferee}
-                disabled={saving}
-              >
-                <Text className={`text-sm font-semibold ${saving ? "text-gray-500" : "text-white"}`}>Add</Text>
-              </TouchableOpacity>
+              {searching && (
+                <View className="absolute right-3 top-3">
+                  <ActivityIndicator size="small" />
+                </View>
+              )}
+              
+              {/* Search Results Dropdown */}
+              {showDropdown && searchResults.length > 0 && (
+                <View className="absolute top-14 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-48">
+                  {searchResults.map((profile) => (
+                    <TouchableOpacity
+                      key={profile.id}
+                      className="px-4 py-3 border-b border-gray-100 active:bg-gray-50"
+                      onPress={() => addRefereeFromSearch(profile)}
+                      disabled={saving}
+                    >
+                      <Text className="text-base text-gray-900">
+                        {profile.full_name || profile.username || "Unknown"}
+                      </Text>
+                      {profile.username && profile.full_name && (
+                        <Text className="text-xs text-gray-500">@{profile.username}</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              
+              {/* No results message */}
+              {hasSearched && searchResults.length === 0 && !searching && (
+                <View className="absolute top-14 left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 p-4">
+                  <Text className="text-sm text-gray-500 text-center">No users found</Text>
+                </View>
+              )}
             </View>
+            <Text className="text-xs text-gray-500 mt-1">Type at least 2 characters to search</Text>
           </View>
 
           <View className="mt-2">
