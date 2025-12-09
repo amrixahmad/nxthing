@@ -62,6 +62,14 @@ type Category = {
   max_teams: number | null;
 };
 
+type CategoryStats = {
+  totalEntries: number;
+  acceptedEntries: number;
+  pendingEntries: number;
+  totalMembers: number;
+  paidMembers: number;
+};
+
 type Tournament = {
   id: number;
   title: string | null;
@@ -80,6 +88,7 @@ export default function ManageCategories() {
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [items, setItems] = useState<Category[]>([]);
+  const [categoryStats, setCategoryStats] = useState<Record<number, CategoryStats>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -216,6 +225,38 @@ export default function ManageCategories() {
       .eq("tournament_id", tid)
       .order("id", { ascending: true });
     setItems((cats as any[]) || []);
+
+    // Fetch registration stats for each category
+    if (cats && cats.length > 0) {
+      const catIds = cats.map((c: any) => c.id);
+      const { data: entries } = await supabase
+        .from("entries")
+        .select("id, category_id, status, payment_status")
+        .in("category_id", catIds);
+      
+      const { data: members } = await supabase
+        .from("entry_members")
+        .select("entry_id, payment_status, entry:entry_id(category_id)")
+        .in("entry_id", (entries || []).map((e: any) => e.id));
+
+      const stats: Record<number, CategoryStats> = {};
+      for (const cat of cats as any[]) {
+        const catEntries = (entries || []).filter((e: any) => e.category_id === cat.id);
+        const catMembers = (members || []).filter((m: any) => {
+          const entry = Array.isArray(m.entry) ? m.entry[0] : m.entry;
+          return entry?.category_id === cat.id;
+        });
+        stats[cat.id] = {
+          totalEntries: catEntries.length,
+          acceptedEntries: catEntries.filter((e: any) => e.status === "accepted").length,
+          pendingEntries: catEntries.filter((e: any) => e.status === "pending").length,
+          totalMembers: catMembers.length,
+          paidMembers: catMembers.filter((m: any) => m.payment_status === "paid" || m.payment_status === "waived").length,
+        };
+      }
+      setCategoryStats(stats);
+    }
+
     setLoading(false);
   }
 
@@ -606,12 +647,15 @@ export default function ManageCategories() {
           ) : items.length === 0 ? (
             <Text className="text-gray-700">No categories yet.</Text>
           ) : (
-            items.map((c) => (
+            items.map((c) => {
+              const stats = categoryStats[c.id];
+              const isFree = !c.registration_fee || c.registration_fee === 0;
+              return (
               <View key={c.id} className="py-3 border-b border-gray-100">
                 <View className="mb-2">
                   <Text className="text-base text-gray-900 font-medium">{c.name}</Text>
                   <Text className="text-xs text-gray-600">
-                    {c.participation_type} • MYR {(c.registration_fee ?? 0).toFixed(2)} • Max {c.max_teams ?? "-"}
+                    {c.participation_type} • {isFree ? "Free" : `MYR ${(c.registration_fee ?? 0).toFixed(2)}`} • Max {c.max_teams ?? "-"}
                   </Text>
                   {c.participation_type === "team" ? (
                     <Text className="text-xs text-gray-600 mt-1">
@@ -624,6 +668,46 @@ export default function ManageCategories() {
                     </Text>
                   ) : null}
                 </View>
+
+                {/* Registration Stats */}
+                {stats && (
+                  <View className="mb-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                    <Text className="text-xs font-medium text-gray-700 mb-2">Registration Progress</Text>
+                    <View className="flex-row flex-wrap gap-x-4 gap-y-1">
+                      <View className="flex-row items-center">
+                        <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
+                        <Text className="text-xs text-gray-600">
+                          {stats.acceptedEntries} {c.participation_type === "team" ? "teams" : "entries"} confirmed
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center">
+                        <View className="w-2 h-2 rounded-full bg-yellow-500 mr-1.5" />
+                        <Text className="text-xs text-gray-600">
+                          {stats.pendingEntries} pending
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center">
+                        <View className="w-2 h-2 rounded-full bg-blue-500 mr-1.5" />
+                        <Text className="text-xs text-gray-600">
+                          {stats.paidMembers}/{stats.totalMembers} members {isFree ? "registered" : "paid"}
+                        </Text>
+                      </View>
+                    </View>
+                    {c.max_teams && (
+                      <View className="mt-2">
+                        <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <View 
+                            className="h-full bg-green-500 rounded-full" 
+                            style={{ width: `${Math.min(100, (stats.acceptedEntries / c.max_teams) * 100)}%` }}
+                          />
+                        </View>
+                        <Text className="text-xs text-gray-500 mt-1">
+                          {stats.acceptedEntries}/{c.max_teams} slots filled ({Math.round((stats.acceptedEntries / c.max_teams) * 100)}%)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
                 <View className="flex-row flex-wrap gap-2">
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300"
@@ -643,7 +727,8 @@ export default function ManageCategories() {
                   </TouchableOpacity>
                 </View>
               </View>
-            ))
+              );
+            })
           )}
         </View>
 
