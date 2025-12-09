@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -41,11 +41,18 @@ export default function MyEntries() {
   const { session } = useSession();
   const params = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [invoking, setInvoking] = useState<number | null>(null);
   const [notice, setNotice] = useState<"success" | "warning" | "error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
   const [highlightId, setHighlightId] = useState<number | null>(null);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
 
   async function load() {
     if (!session?.user) return;
@@ -240,7 +247,10 @@ export default function MyEntries() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView 
+      className="flex-1 bg-gray-50"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Stack.Screen options={{ title: "My Teams & Entries" }} />
 
       <View className="px-4 mt-6">

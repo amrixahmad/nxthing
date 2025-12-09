@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Modal } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Modal, RefreshControl } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useToast } from "@/src/components/Toast";
@@ -92,6 +92,12 @@ export default function ManageCategories() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
 
   const [name, setName] = useState("");
   const [ptype, setPtype] = useState<"singles" | "doubles" | "team">("singles");
@@ -481,7 +487,10 @@ export default function ManageCategories() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
+    <ScrollView 
+      className="flex-1 bg-gray-50"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <Stack.Screen options={{ title: tournament?.title || `Tournament #${tid}` }} />
 
       <View className="px-4 mt-6">
