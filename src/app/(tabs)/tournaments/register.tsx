@@ -388,19 +388,23 @@ export default function RegisterAndPay() {
                     <Text className="text-xs text-gray-500 italic">You're the first member! Share the invite link with your teammates.</Text>
                   ) : (
                     <View className="space-y-2">
-                      {teamMembers.map((m) => (
+                      {teamMembers.map((m) => {
+                        const isFree = !category?.registration_fee || category.registration_fee === 0;
+                        const isCompleted = m.payment_status === "paid" || m.payment_status === "waived";
+                        return (
                         <View key={m.profile_id} className="flex-row items-center justify-between py-1">
                           <Text className="text-sm text-gray-800">
                             {m.profile?.full_name || m.profile?.username || m.profile_id.slice(0, 8)}
                             {m.profile_id === session?.user?.id ? " (You)" : ""}
                           </Text>
-                          <View className={`px-2 py-0.5 rounded ${m.payment_status === "paid" ? "bg-green-100" : "bg-yellow-100"}`}>
-                            <Text className={`text-xs ${m.payment_status === "paid" ? "text-green-700" : "text-yellow-700"}`}>
-                              {m.payment_status === "paid" ? "Paid" : "Unpaid"}
+                          <View className={`px-2 py-0.5 rounded ${isCompleted ? "bg-green-100" : "bg-yellow-100"}`}>
+                            <Text className={`text-xs ${isCompleted ? "text-green-700" : "text-yellow-700"}`}>
+                              {isCompleted ? (isFree ? "Registered" : "Paid") : (isFree ? "Pending" : "Unpaid")}
                             </Text>
                           </View>
                         </View>
-                      ))}
+                        );
+                      })}
                     </View>
                   )}
                 </View>
