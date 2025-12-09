@@ -471,6 +471,7 @@ export default function TournamentDetails() {
                       inviteUrlToShow = createdInviteUrl;
                     }
 
+                    const isFree = !c.registration_fee || Number(c.registration_fee) === 0;
                     actionNode = (
                       <View>
                         <TouchableOpacity
@@ -479,7 +480,7 @@ export default function TournamentDetails() {
                           disabled={isBusy || !isOpen}
                         >
                           <Text className={`text-center font-semibold ${isBusy || !isOpen ? "text-gray-500" : "text-white"}`}>
-                            {isOpen ? "Pay Registration Fee" : "Registration Closed"}
+                            {!isOpen ? "Registration Closed" : isFree ? "Confirm Registration" : "Pay Registration Fee"}
                           </Text>
                         </TouchableOpacity>
                         {inviteUrlToShow ? (
@@ -545,33 +546,36 @@ export default function TournamentDetails() {
                   } else {
                     actionNode = (
                       <View>
-                        <TouchableOpacity
-                          className={`rounded-lg py-3 ${isBusy ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
-                          onPress={() => {
-                            setCreatingFor(c.id);
-                            setEditingFor(null);
-                            setTeamName("");
-                            setTeamSlogan("");
-                            setTeamLogoUrl("");
-                          }}
-                          disabled={isBusy}
-                        >
-                          <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>
-                            Create Team
-                          </Text>
-                        </TouchableOpacity>
-                        {!showTeamOnly ? (
-                          <TouchableOpacity
-                            className={`mt-2 rounded-lg py-3 border ${isBusy ? "border-gray-200 bg-gray-100" : "border-blue-300 bg-blue-50 active:bg-blue-100"}`}
-                            onPress={() => register(c.id)}
-                            disabled={isBusy}
-                          >
-                            <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-blue-700"}`}>
-                              Register as Individual
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
-                        {creatingFor === c.id ? (
+                        {creatingFor !== c.id ? (
+                          <>
+                            <TouchableOpacity
+                              className={`rounded-lg py-3 ${isBusy ? "bg-gray-300" : "bg-indigo-600 active:bg-indigo-700"}`}
+                              onPress={() => {
+                                setCreatingFor(c.id);
+                                setEditingFor(null);
+                                setTeamName("");
+                                setTeamSlogan("");
+                                setTeamLogoUrl("");
+                              }}
+                              disabled={isBusy}
+                            >
+                              <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-white"}`}>
+                                Create Team
+                              </Text>
+                            </TouchableOpacity>
+                            {!showTeamOnly ? (
+                              <TouchableOpacity
+                                className={`mt-2 rounded-lg py-3 border ${isBusy ? "border-gray-200 bg-gray-100" : "border-blue-300 bg-blue-50 active:bg-blue-100"}`}
+                                onPress={() => register(c.id)}
+                                disabled={isBusy}
+                              >
+                                <Text className={`text-center font-semibold ${isBusy ? "text-gray-500" : "text-blue-700"}`}>
+                                  Register as Individual
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </>
+                        ) : (
                           <View className="mt-3 p-3 rounded-lg bg-white border border-gray-200">
                             <Text className="text-sm font-medium text-gray-900 mb-3">Create Your Team</Text>
                             <TextInput
@@ -618,7 +622,7 @@ export default function TournamentDetails() {
                               </TouchableOpacity>
                             </View>
                           </View>
-                        ) : null}
+                        )}
                       </View>
                     );
                   }

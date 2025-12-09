@@ -235,8 +235,9 @@ export default function ManageCategories() {
         return;
       }
       const regFee = Number(fee) || 0;
-      if (regFee < 1) {
-        setCategoryError("Minimum registration fee is RM 1.");
+      // Allow RM 0 (free) or minimum RM 1 for paid tournaments
+      if (regFee > 0 && regFee < 1) {
+        setCategoryError("Minimum registration fee is RM 1 (or RM 0 for free).");
         return;
       }
       setSaving(true);
@@ -570,7 +571,7 @@ export default function ManageCategories() {
               value={fee}
               onChangeText={setFee}
             />
-            <Text className="text-xs text-gray-500 mt-1">Minimum fee is RM 1</Text>
+            <Text className="text-xs text-gray-500 mt-1">RM 0 for free, or minimum RM 1</Text>
           </View>
 
           <View className="mb-4">

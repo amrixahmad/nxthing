@@ -21,6 +21,7 @@ type EntryRow = {
     id: number;
     name?: string | null;
     participation_type?: string | null;
+    registration_fee?: number | null;
     members_per_team_min?: number | null;
     members_per_team_max?: number | null;
     tournament?: {
@@ -55,7 +56,7 @@ export default function MyEntries() {
       .from("entries")
       .select(
         `id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
-         category:category_id ( id, name, participation_type, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
+         category:category_id ( id, name, participation_type, registration_fee, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )`
       )
       .eq("created_by", userId);
 
@@ -65,7 +66,7 @@ export default function MyEntries() {
         `entry_id, payment_status,
          entry:entry_id (
            id, status, payment_status, payment_amount, payment_currency, team_name, created_at, created_by,
-           category:category_id ( id, name, participation_type, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )
+           category:category_id ( id, name, participation_type, registration_fee, members_per_team_min, members_per_team_max, tournament:tournament_id ( id, title, status, registration_start_date, registration_end_date ) )
          )`
       )
       .eq("profile_id", userId);
@@ -96,6 +97,7 @@ export default function MyEntries() {
                 id: cat.id,
                 name: cat.name ?? null,
                 participation_type: cat.participation_type ?? null,
+                registration_fee: cat.registration_fee ?? null,
                 members_per_team_min: cat.members_per_team_min ?? null,
                 members_per_team_max: cat.members_per_team_max ?? null,
                 tournament: tour
@@ -289,6 +291,7 @@ export default function MyEntries() {
             const canPay = e.payment_status === "unpaid";
             const amount = e.payment_amount ?? 0;
             const currency = (e.payment_currency || "myr").toUpperCase();
+            const isFree = !e.category?.registration_fee || Number(e.category.registration_fee) === 0;
             const isHighlight = highlightId === e.id;
             const t = e.category?.tournament;
             const isOpen = (() => {
@@ -331,26 +334,26 @@ export default function MyEntries() {
                     <Text className="text-sm text-gray-800">{e.status}</Text>
                   </View>
                   <View className="mr-4">
-                    <Text className="text-xs text-gray-500">Team Payment</Text>
-                    <Text className="text-sm text-gray-800">{e.payment_status}</Text>
+                    <Text className="text-xs text-gray-500">{isFree ? "Team Status" : "Team Payment"}</Text>
+                    <Text className="text-sm text-gray-800">{isFree ? (e.payment_status === "waived" ? "registered" : "pending") : e.payment_status}</Text>
                   </View>
                 </View>
 
-                {/* Individual payment status for team entries */}
+                {/* Individual payment/registration status for team entries */}
                 {pType === "team" && (
                   <View className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-xs font-medium text-gray-700">Your Payment</Text>
-                      <View className={`px-2 py-0.5 rounded ${e.myPaymentStatus === "paid" ? "bg-green-100" : "bg-yellow-100"}`}>
-                        <Text className={`text-xs font-medium ${e.myPaymentStatus === "paid" ? "text-green-700" : "text-yellow-700"}`}>
-                          {e.myPaymentStatus === "paid" ? "✓ You Paid" : "Unpaid"}
+                      <Text className="text-xs font-medium text-gray-700">{isFree ? "Your Status" : "Your Payment"}</Text>
+                      <View className={`px-2 py-0.5 rounded ${(e.myPaymentStatus === "paid" || e.myPaymentStatus === "waived") ? "bg-green-100" : "bg-yellow-100"}`}>
+                        <Text className={`text-xs font-medium ${(e.myPaymentStatus === "paid" || e.myPaymentStatus === "waived") ? "text-green-700" : "text-yellow-700"}`}>
+                          {(e.myPaymentStatus === "paid" || e.myPaymentStatus === "waived") ? (isFree ? "✓ Registered" : "✓ You Paid") : (isFree ? "Not Registered" : "Unpaid")}
                         </Text>
                       </View>
                     </View>
                     {e.totalMembersCount != null && e.paidMembersCount != null && (
                       <View className="mt-2">
                         <Text className="text-xs text-gray-600">
-                          Team Progress: {e.paidMembersCount}/{e.totalMembersCount} members paid
+                          Team Progress: {e.paidMembersCount}/{e.totalMembersCount} members {isFree ? "registered" : "paid"}
                           {e.category?.members_per_team_min && e.paidMembersCount < e.category.members_per_team_min && (
                             ` (need ${e.category.members_per_team_min} min)`
                           )}
@@ -368,11 +371,11 @@ export default function MyEntries() {
 
                 <View className="flex-row items-center justify-between mt-4">
                   <Text className="text-gray-900 font-semibold">
-                    {amount ? `${currency} ${amount.toFixed(2)}` : ""}
+                    {isFree ? "Free" : amount ? `${currency} ${amount.toFixed(2)}` : ""}
                   </Text>
-                  {e.myPaymentStatus === "paid" ? (
+                  {e.myPaymentStatus === "paid" || e.myPaymentStatus === "waived" ? (
                     <View className="px-3 py-2 rounded-lg bg-green-100">
-                      <Text className="text-green-800">✓ Paid</Text>
+                      <Text className="text-green-800">{isFree ? "✓ Registered" : "✓ Paid"}</Text>
                     </View>
                   ) : canPay ? (
                     <TouchableOpacity
@@ -381,12 +384,12 @@ export default function MyEntries() {
                       disabled={invoking === e.id || !isOpen}
                     >
                       <Text className={`text-center font-semibold ${(invoking === e.id || !isOpen) ? "text-gray-500" : "text-white"}`}>
-                        {invoking === e.id ? "Opening..." : isOpen ? "Pay" : "Closed"}
+                        {invoking === e.id ? "Processing..." : !isOpen ? "Closed" : isFree ? "Register" : "Pay"}
                       </Text>
                     </TouchableOpacity>
                   ) : (
                     <View className="px-3 py-2 rounded-lg bg-green-100">
-                      <Text className="text-green-800">Paid</Text>
+                      <Text className="text-green-800">{isFree ? "Registered" : "Paid"}</Text>
                     </View>
                   )}
                 </View>
