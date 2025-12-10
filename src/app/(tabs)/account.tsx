@@ -59,6 +59,11 @@ export default function Account() {
   const [address, setAddress] = useState("");
   const [notice, setNotice] = useState<"success" | "error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
+  
+  // Password change state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Load user profile when session changes
   useEffect(() => {
@@ -178,6 +183,48 @@ export default function Account() {
       }
     } finally {
       setUpdating(false);
+    }
+  }
+
+  /**
+   * Updates the user's password
+   */
+  async function changePassword() {
+    if (!newPassword || !confirmPassword) {
+      setNotice("error");
+      setNoticeText("Please fill in both password fields.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setNotice("error");
+      setNoticeText("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setNotice("error");
+      setNoticeText("Passwords do not match.");
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (error) {
+        throw error;
+      }
+
+      setNotice("success");
+      setNoticeText("Password updated successfully!");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      if (error instanceof Error) {
+        setNotice("error");
+        setNoticeText(error.message);
+      }
+    } finally {
+      setChangingPassword(false);
     }
   }
 
@@ -406,6 +453,68 @@ export default function Account() {
               }`}
             >
               {updating ? "⏳ Updating..." : "💾 Update Profile"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Change Password */}
+      <View className="mx-4 mt-4 bg-white rounded-xl shadow-sm border border-gray-100">
+        <View className="p-6">
+          <Text className="text-lg font-semibold text-gray-900 mb-2">
+            Change Password
+          </Text>
+          <Text className="text-sm text-gray-500 mb-4">
+            Set or update your password for email login
+          </Text>
+
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              New Password
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Minimum 6 characters"
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View className="mb-4">
+            <Text className="text-base font-medium text-gray-700 mb-2">
+              Confirm Password
+            </Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Re-enter your password"
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+
+          <TouchableOpacity
+            className={`rounded-lg py-4 px-6 ${
+              changingPassword || !newPassword || !confirmPassword
+                ? "bg-gray-300"
+                : "bg-green-600 active:bg-green-700"
+            }`}
+            onPress={changePassword}
+            disabled={changingPassword || !newPassword || !confirmPassword}
+          >
+            <Text
+              className={`text-center font-semibold ${
+                changingPassword || !newPassword || !confirmPassword
+                  ? "text-gray-500"
+                  : "text-white"
+              }`}
+            >
+              {changingPassword ? "⏳ Updating..." : "🔐 Update Password"}
             </Text>
           </TouchableOpacity>
         </View>
