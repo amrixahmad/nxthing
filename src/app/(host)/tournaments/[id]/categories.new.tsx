@@ -158,7 +158,22 @@ export default function ManageCategories() {
       const { data, error } = await supabase.functions.invoke("generate-bracket", {
         body: { category_id: categoryId },
       });
-      if (error) throw error as any;
+      if (error) {
+        // Extract message from the error context body (ReadableStream)
+        let errMsg = "Failed to generate bracket";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            errMsg = parsed?.error || parsed?.message || errMsg;
+          } else {
+            errMsg = (error as any)?.message || errMsg;
+          }
+        } catch {
+          errMsg = (error as any)?.message || errMsg;
+        }
+        throw new Error(errMsg);
+      }
       const msg = (data as any)?.message || "Bracket generated";
       toast.show({ type: "success", message: msg });
     } catch (e) {

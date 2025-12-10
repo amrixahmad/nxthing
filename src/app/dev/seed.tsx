@@ -89,12 +89,19 @@ export default function SeederScreen() {
         },
       });
       if (error) {
-        const payload: any = data as any;
-        const serverMsg = (payload && (payload.error || payload.message)) || error.message || "Edge Function returned an error";
-        log(`Orphan cleanup error: ${serverMsg}`);
-        if (payload) {
-          log(`Orphan cleanup payload: ${JSON.stringify(payload)}`);
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (error as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (error as any)?.message || serverMsg;
         }
+        log(`Orphan cleanup error: ${serverMsg}`);
         return;
       }
       log("Orphan seed user cleanup completed.");
@@ -122,12 +129,19 @@ export default function SeederScreen() {
         },
       });
       if (error) {
-        const payload: any = data as any;
-        const serverMsg = (payload && (payload.error || payload.message)) || error.message || "Edge Function returned an error";
-        log(`Cleanup error: ${serverMsg}`);
-        if (payload) {
-          log(`Cleanup payload: ${JSON.stringify(payload)}`);
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (error as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (error as any)?.message || serverMsg;
         }
+        log(`Cleanup error: ${serverMsg}`);
         return;
       }
       log("Cleanup completed.");

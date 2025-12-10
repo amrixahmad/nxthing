@@ -364,10 +364,19 @@ export default function ManageCategories() {
       
       // Check for error in response body (edge function returns error in JSON)
       if (error) {
-        // Try to extract message from the error context
-        const errMsg = (error as any)?.context?.body 
-          ? JSON.parse((error as any).context.body)?.error 
-          : (error as any)?.message || "Failed to generate bracket";
+        // Extract message from the error context body (ReadableStream)
+        let errMsg = "Failed to generate bracket";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            errMsg = parsed?.error || parsed?.message || errMsg;
+          } else {
+            errMsg = (error as any)?.message || errMsg;
+          }
+        } catch {
+          errMsg = (error as any)?.message || errMsg;
+        }
         throw new Error(errMsg);
       }
       
@@ -397,7 +406,7 @@ export default function ManageCategories() {
       setSaving(true);
       
       // Build update payload
-      const updatePayload: Record<string, any> = { status: open ? "registration_open" : "draft" };
+      const updatePayload: Record<string, any> = { status: open ? "registration_open" : "registration_closed" };
       
       // If opening and no window set, auto-set to now → tournament start
       if (open && (!tournament.registration_start_date || !tournament.registration_end_date)) {
@@ -405,6 +414,11 @@ export default function ManageCategories() {
         const regEnd = tournament.start_date ? new Date(tournament.start_date) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // fallback: 7 days from now
         updatePayload.registration_start_date = now.toISOString();
         updatePayload.registration_end_date = regEnd.toISOString();
+      }
+      
+      // If closing registration early, set end date to now so brackets can be generated
+      if (!open) {
+        updatePayload.registration_end_date = new Date().toISOString();
       }
       
       const { error } = await supabase

@@ -644,8 +644,19 @@ export default function FixturesByCategory() {
       });
 
       if (error) {
-        const payload: any = data as any;
-        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        // Extract message from the error context body (ReadableStream)
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (error as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (error as any)?.message || serverMsg;
+        }
         alert("Error generating bracket: " + serverMsg);
         return;
       }
@@ -754,11 +765,18 @@ export default function FixturesByCategory() {
         }
       );
       if (advError) {
-        const payload: any = data as any;
-        const serverMsg =
-          (payload && (payload.error || payload.message)) ||
-          advError.message ||
-          "Edge Function returned an error";
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (advError as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (advError as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (advError as any)?.message || serverMsg;
+        }
         alert("Error updating knockout: " + serverMsg);
       }
 
@@ -779,8 +797,18 @@ export default function FixturesByCategory() {
       });
 
       if (error) {
-        const payload: any = data as any;
-        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (error as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (error as any)?.message || serverMsg;
+        }
         alert("Error updating knockout: " + serverMsg);
         return;
       }
@@ -804,8 +832,18 @@ export default function FixturesByCategory() {
       });
 
       if (error) {
-        const payload: any = data as any;
-        const serverMsg = (payload && (payload.error || payload.message)) || "Edge Function returned an error";
+        let serverMsg = "Edge Function returned an error";
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.body) {
+            const parsed = await new Response(ctx.body).json();
+            serverMsg = parsed?.error || parsed?.message || serverMsg;
+          } else {
+            serverMsg = (error as any)?.message || serverMsg;
+          }
+        } catch {
+          serverMsg = (error as any)?.message || serverMsg;
+        }
         alert("Error generating knockout: " + serverMsg);
         return;
       }
