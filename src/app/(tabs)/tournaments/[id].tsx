@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Image, Platform, RefreshControl } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Image, Platform, RefreshControl, useWindowDimensions } from "react-native";
 import { Stack, useLocalSearchParams, Link, router } from "expo-router";
 import { useSession } from "@/context/SessionProvider";
 import { supabase } from "@/lib/supabase";
@@ -32,6 +32,8 @@ export default function TournamentDetails() {
   const { session } = useSession();
   const params = useLocalSearchParams<{ id: string }>();
   const tid = Number(params.id);
+  const { width } = useWindowDimensions();
+  const isMobile = width < 640;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,8 +56,9 @@ export default function TournamentDetails() {
   const [teamMembersByEntry, setTeamMembersByEntry] = useState<Record<number, Array<{ profile_id: string; display_name: string | null; payment_status: string | null }>>>({});
   const [acceptedCounts, setAcceptedCounts] = useState<Record<number, number>>({});
   const [statsByCategory, setStatsByCategory] = useState<Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }>>({});
-  const [participantsByCategory, setParticipantsByCategory] = useState<Record<number, string[]>>({});
+  const [participantsByCategory, setParticipantsByCategory] = useState<Record<number, Array<{ entryId: number; teamName: string; members: string[] }>>>({});
   const [showAllParticipants, setShowAllParticipants] = useState<Record<number, boolean>>({});
+  const [expandedTeams, setExpandedTeams] = useState<Record<number, boolean>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<"error" | null>(null);
   const [noticeText, setNoticeText] = useState("");
@@ -233,7 +236,7 @@ export default function TournamentDetails() {
     if (details) {
       const mapCounts: Record<number, number> = {};
       const mapStats: Record<number, { completed: number; total: number; currentRoundNumber: number | null; currentRoundName: string | null }> = {};
-      const mapParticipants: Record<number, string[]> = {};
+      const mapParticipants: Record<number, Array<{ entryId: number; teamName: string; members: string[] }>> = {};
 
       for (const c of details.categories) {
         // Accepted counts
@@ -284,29 +287,38 @@ export default function TournamentDetails() {
         // Participants (only from accepted entries in this category)
         const { data: eRows } = await supabase
           .from("entries")
-          .select("id")
+          .select("id, team_name")
           .eq("category_id", c.id)
           .eq("status", "accepted");
         const eids: number[] = ((eRows as any[]) || []).map((r: any) => Number(r.id)).filter(Boolean);
+        const teamNameByEntry: Record<number, string> = {};
+        ((eRows as any[]) || []).forEach((r: any) => {
+          if (r.team_name) teamNameByEntry[Number(r.id)] = String(r.team_name).trim();
+        });
         if (eids.length === 0) {
           mapParticipants[c.id] = [];
         } else {
           const { data: mems } = await supabase
             .from("entry_members")
-            .select("entry_id, display_name")
+            .select("entry_id, display_name, profile:profile_id(full_name, username)")
             .in("entry_id", eids);
-          const byEntry: Record<number, string[]> = {};
+          const membersByEntry: Record<number, string[]> = {};
           ((mems as any[]) || []).forEach((em: any) => {
             const eid = Number(em.entry_id);
-            const dn = String(em.display_name || '').trim();
-            if (!byEntry[eid]) byEntry[eid] = [];
-            if (dn) byEntry[eid].push(dn);
+            const profile = Array.isArray(em.profile) ? em.profile[0] : em.profile;
+            const dn = String(em.display_name || profile?.full_name || profile?.username || '').trim();
+            if (!membersByEntry[eid]) membersByEntry[eid] = [];
+            if (dn) membersByEntry[eid].push(dn);
           });
-          const names = Object.keys(byEntry)
-            .map((k) => byEntry[Number(k)].join(" / "))
-            .filter(Boolean)
-            .sort((a, b) => a.localeCompare(b));
-          mapParticipants[c.id] = names;
+          // Build participant list with team details
+          const participantList = eids
+            .map((eid) => ({
+              entryId: eid,
+              teamName: teamNameByEntry[eid] || membersByEntry[eid]?.join(" / ") || `Team #${eid}`,
+              members: membersByEntry[eid] || [],
+            }))
+            .sort((a, b) => a.teamName.localeCompare(b.teamName));
+          mapParticipants[c.id] = participantList;
         }
       }
       setAcceptedCounts(mapCounts);
@@ -527,7 +539,7 @@ export default function TournamentDetails() {
                 const stats = statsByCategory[c.id];
                 const participants = participantsByCategory[c.id] || [];
                 const showingAll = !!showAllParticipants[c.id];
-                const preview = showingAll ? participants : participants.slice(0, 4);
+                const preview = showingAll ? participants : participants.slice(0, 6);
                 const teamSize = meta ? teamSizeByEntry[meta.id] : undefined;
 
                 const teamMembers = meta ? teamMembersByEntry[meta.id] : undefined;
@@ -814,37 +826,59 @@ export default function TournamentDetails() {
                         </Text>
                       ) : null}
                       {(acceptedCounts[c.id] ?? 0) > 0 && participants.length > 0 ? (
-                        <View className="mt-3">
-                          <Text className="text-xs font-medium text-gray-700 mb-2">Participants ({participants.length} teams)</Text>
-                          <View className="space-y-2">
-                            {preview.map((teamMembers, idx) => {
-                              // Split team members and display nicely
-                              const members = teamMembers.split(" / ").filter(Boolean);
+                        <View className="mt-4">
+                          <View className="flex-row items-center justify-between mb-3">
+                            <View className="flex-row items-center">
+                              <Text className="text-sm font-semibold text-gray-800">Registered Teams</Text>
+                              <View className="ml-2 px-2 py-0.5 rounded-full bg-blue-100">
+                                <Text className="text-xs font-medium text-blue-700">{participants.length}</Text>
+                              </View>
+                            </View>
+                            {participants.length > 6 && (
+                              <TouchableOpacity
+                                onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}
+                              >
+                                <Text className="text-xs text-blue-600 font-medium">
+                                  {showingAll ? "Show less" : "Show all"}
+                                </Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                          <View className={`flex-row flex-wrap ${isMobile ? '' : '-m-1'}`}>
+                            {preview.map((team) => {
+                              const isExpanded = !!expandedTeams[team.entryId];
                               return (
-                                <View key={idx} className="p-2 rounded-lg bg-gray-50 border border-gray-200">
-                                  <View className="flex-row flex-wrap">
-                                    {members.map((member, mIdx) => (
-                                      <View key={mIdx} className="mr-2 mb-1">
-                                        <Text className="text-xs text-gray-800">
-                                          {member}{mIdx < members.length - 1 ? "," : ""}
-                                        </Text>
+                                <View key={team.entryId} className={isMobile ? 'w-full mb-2' : 'p-1'} style={isMobile ? undefined : { width: '50%' }}>
+                                  <TouchableOpacity
+                                    className={`p-3 rounded-lg border ${isExpanded ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}
+                                    onPress={() => setExpandedTeams((m) => ({ ...m, [team.entryId]: !isExpanded }))}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View className="flex-row items-center justify-between">
+                                      <Text className="text-sm font-medium text-gray-900 flex-1" numberOfLines={1}>
+                                        {team.teamName}
+                                      </Text>
+                                      <Text className="text-xs text-gray-400 ml-1">
+                                        {isExpanded ? "▲" : "▼"}
+                                      </Text>
+                                    </View>
+                                    <Text className="text-xs text-gray-500 mt-0.5">
+                                      {team.members.length} player{team.members.length !== 1 ? 's' : ''}
+                                    </Text>
+                                    {isExpanded && team.members.length > 0 && (
+                                      <View className="mt-2 pt-2 border-t border-gray-200">
+                                        {team.members.map((member: string, mIdx: number) => (
+                                          <Text key={mIdx} className="text-xs text-gray-700 py-0.5">
+                                            • {member}
+                                          </Text>
+                                        ))}
                                       </View>
-                                    ))}
-                                  </View>
+                                    )}
+                                  </TouchableOpacity>
                                 </View>
                               );
                             })}
                           </View>
-                          {participants.length > 4 ? (
-                            <TouchableOpacity
-                              className="mt-2 self-start"
-                              onPress={() => setShowAllParticipants((m) => ({ ...m, [c.id]: !showingAll }))}
-                            >
-                              <Text className="text-xs text-blue-600 font-medium">
-                                {showingAll ? "Show less" : `Show all ${participants.length} teams`}
-                              </Text>
-                            </TouchableOpacity>
-                          ) : null}
                         </View>
                       ) : null}
                       {meta ? (
