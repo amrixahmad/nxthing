@@ -5,24 +5,36 @@ import * as Linking from "expo-linking";
 import { useSession } from "../../context/SessionProvider";
 import { supabase } from "../../lib/supabase";
 
+// Check for recovery mode synchronously on initial load
+function checkIsRecoveryMode(): boolean {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const hash = window.location.hash;
+    return hash.includes("type=recovery");
+  }
+  return false;
+}
+
 export default function AuthCallback() {
   const [message, setMessage] = useState("Completing verification...");
   const { session, loading } = useSession();
-  const [isPasswordReset, setIsPasswordReset] = useState(false);
+  // Initialize with synchronous check to prevent flash/redirect
+  const [isPasswordReset, setIsPasswordReset] = useState(() => checkIsRecoveryMode());
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [updating, setUpdating] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        // Check URL for password reset flow
+        // Double-check URL for password reset flow
         if (Platform.OS === "web" && typeof window !== "undefined") {
           const hash = window.location.hash;
           if (hash.includes("type=recovery")) {
             setIsPasswordReset(true);
             setMessage("Set your new password below.");
+            setInitialized(true);
             return;
           }
         }
@@ -31,15 +43,16 @@ export default function AuthCallback() {
       } catch {
         setMessage("Email verified. You can continue in the app.");
       }
+      setInitialized(true);
     })();
   }, []);
 
   useEffect(() => {
-    // Only auto-redirect if not in password reset mode
-    if (!loading && session && !isPasswordReset) {
+    // Only auto-redirect if not in password reset mode AND initialization is complete
+    if (initialized && !loading && session && !isPasswordReset) {
       router.replace("/" as any);
     }
-  }, [loading, session, isPasswordReset]);
+  }, [loading, session, isPasswordReset, initialized]);
 
   async function handleUpdatePassword() {
     if (!newPassword || !confirmPassword) {

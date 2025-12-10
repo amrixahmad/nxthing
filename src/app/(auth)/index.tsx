@@ -354,6 +354,13 @@ export default function Auth() {
               </View>
             </>
 
+            {/* Forgot password prompt */}
+            {forgotPasswordMode && !notice && (
+              <Text className="mb-3 text-gray-600">
+                Enter your email address and we'll send you a link to reset your password.
+              </Text>
+            )}
+
             {/* Notice - shown above email input */}
             {notice ? (
               <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
@@ -376,37 +383,42 @@ export default function Auth() {
               />
             </View>
 
-            {/* Password Input */}
-            <View className="mb-6">
-              <Text className="text-base font-medium text-gray-700 mb-2">
-                Password
-              </Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
-                onChangeText={setPassword}
-                value={password}
-                secureTextEntry={true}
-                placeholder={
-                  isSignUp ? "Minimum 6 characters" : "Enter your password"
-                }
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              {isSignUp && (
-                <Text className="text-sm text-gray-500 mt-1">
-                  Password must be at least 6 characters long
+            {/* Password Input - hidden in forgot password mode */}
+            {!forgotPasswordMode && (
+              <View className="mb-6">
+                <Text className="text-base font-medium text-gray-700 mb-2">
+                  Password
                 </Text>
-              )}
-              {!isSignUp && (
-                <TouchableOpacity
-                  className="mt-2"
-                  onPress={handleForgotPassword}
-                  disabled={loading}
-                >
-                  <Text className="text-sm text-blue-600">Forgot Password?</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                <TextInput
+                  className="border border-gray-300 rounded-lg p-4 text-base text-gray-900 bg-white"
+                  onChangeText={setPassword}
+                  value={password}
+                  secureTextEntry={true}
+                  placeholder={
+                    isSignUp ? "Minimum 6 characters" : "Enter your password"
+                  }
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                />
+                {isSignUp && (
+                  <Text className="text-sm text-gray-500 mt-1">
+                    Password must be at least 6 characters long
+                  </Text>
+                )}
+                {!isSignUp && (
+                  <TouchableOpacity
+                    className="mt-2"
+                    onPress={() => {
+                      setForgotPasswordMode(true);
+                      setNotice(null);
+                    }}
+                    disabled={loading}
+                  >
+                    <Text className="text-sm text-blue-600">Forgot Password?</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
             {isSignUp && (
               <>
@@ -442,45 +454,82 @@ export default function Auth() {
             )}
 
             {/* Submit Button */}
-            <TouchableOpacity
-              className={`rounded-lg py-4 px-6 mb-4 ${
-                loading || !email || !password
-                  ? "bg-gray-300"
-                  : "bg-blue-600 active:bg-blue-700"
-              }`}
-              onPress={isSignUp ? signUpWithEmail : signInWithEmail}
-              disabled={loading || !email || !password}
-            >
-              <Text
-                className={`text-center font-semibold ${
-                  loading || !email || !password
-                    ? "text-gray-500"
-                    : "text-white"
-                }`}
-              >
-                {loading
-                  ? "⏳ Please wait..."
-                  : isSignUp
-                  ? "🎉 Create Account"
-                  : "🔑 Sign In"}
-              </Text>
-            </TouchableOpacity>
+            {forgotPasswordMode ? (
+              <>
+                <TouchableOpacity
+                  className={`rounded-lg py-4 px-6 mb-4 ${
+                    loading || !email
+                      ? "bg-gray-300"
+                      : "bg-blue-600 active:bg-blue-700"
+                  }`}
+                  onPress={handleForgotPassword}
+                  disabled={loading || !email}
+                >
+                  <Text
+                    className={`text-center font-semibold ${
+                      loading || !email ? "text-gray-500" : "text-white"
+                    }`}
+                  >
+                    {loading ? "⏳ Sending..." : "📧 Send Recovery Email"}
+                  </Text>
+                </TouchableOpacity>
 
-            {/* Toggle Auth Mode */}
-            <TouchableOpacity
-              className="py-3"
-              onPress={() => {
-                setIsSignUp(!isSignUp);
-                setNotice(null);
-              }}
-              disabled={loading}
-            >
-              <Text className="text-center text-blue-600 font-medium">
-                {isSignUp
-                  ? "Already have an account? Sign In"
-                  : "Don't have an account? Sign Up"}
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  className="py-3"
+                  onPress={() => {
+                    setForgotPasswordMode(false);
+                    setNotice(null);
+                  }}
+                  disabled={loading}
+                >
+                  <Text className="text-center text-blue-600 font-medium">
+                    ← Back to Sign In
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  className={`rounded-lg py-4 px-6 mb-4 ${
+                    loading || !email || !password
+                      ? "bg-gray-300"
+                      : "bg-blue-600 active:bg-blue-700"
+                  }`}
+                  onPress={isSignUp ? signUpWithEmail : signInWithEmail}
+                  disabled={loading || !email || !password}
+                >
+                  <Text
+                    className={`text-center font-semibold ${
+                      loading || !email || !password
+                        ? "text-gray-500"
+                        : "text-white"
+                    }`}
+                  >
+                    {loading
+                      ? "⏳ Please wait..."
+                      : isSignUp
+                      ? "🎉 Create Account"
+                      : "🔑 Sign In"}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Toggle Auth Mode */}
+                <TouchableOpacity
+                  className="py-3"
+                  onPress={() => {
+                    setIsSignUp(!isSignUp);
+                    setNotice(null);
+                  }}
+                  disabled={loading}
+                >
+                  <Text className="text-center text-blue-600 font-medium">
+                    {isSignUp
+                      ? "Already have an account? Sign In"
+                      : "Don't have an account? Sign Up"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
           {/* Features Preview */}
