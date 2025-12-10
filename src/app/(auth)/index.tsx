@@ -240,29 +240,50 @@ export default function Auth() {
       },
     };
 
-    const { error } = await supabase.auth.signUp({ email, password, ...(opts || {}) });
+    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, ...(opts || {}) });
 
     if (error) {
       Alert.alert("Sign Up Error", error.message);
-    } else {
-      try {
-        const { data: userData } = await supabase.auth.getUser();
-        const user = userData?.user;
-        if (user) {
-          const username = deriveUsernameFromEmail(user.email ?? email, user.id);
-          const updates = {
-            id: user.id,
-            username,
-            full_name: funFullName,
-            dupr_id: duprId || null,
-            dupr_rating: duprRating ? Number(duprRating) : null,
-            updated_at: new Date().toISOString(),
-          };
-          await supabase.from("profiles").upsert(updates);
-        }
-      } catch (e) {}
-      Alert.alert("Success", "Check your email for verification link!");
+      setLoading(false);
+      return;
     }
+
+    // Check if user already exists - Supabase returns identities as empty array for existing users
+    const isExistingUser = data?.user?.identities?.length === 0;
+    
+    if (isExistingUser) {
+      // Email already registered
+      setNotice({ 
+        type: "error", 
+        text: "This email is already registered. Please sign in instead, or use 'Forgot Password' if you don't remember your password." 
+      });
+      setLoading(false);
+      return;
+    }
+
+    // New user created successfully
+    try {
+      const user = data?.user;
+      if (user) {
+        const username = deriveUsernameFromEmail(user.email ?? email, user.id);
+        const updates = {
+          id: user.id,
+          username,
+          full_name: funFullName,
+          dupr_id: duprId || null,
+          dupr_rating: duprRating ? Number(duprRating) : null,
+          updated_at: new Date().toISOString(),
+        };
+        await supabase.from("profiles").upsert(updates);
+      }
+    } catch (e) {
+      console.error("Profile creation error:", e);
+    }
+    
+    setNotice({ 
+      type: "success", 
+      text: "Account created! Please check your email and click the verification link to activate your account." 
+    });
     setLoading(false);
   }
 
@@ -295,7 +316,7 @@ export default function Auth() {
             <Text className="text-xl font-semibold text-gray-900 mb-6 text-center">
               {isSignUp ? "Create Account" : "Sign In"}
             </Text>
-            {!isSignUp && notice ? (
+            {notice ? (
               <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
             ) : null}
 
@@ -446,7 +467,10 @@ export default function Auth() {
             {/* Toggle Auth Mode */}
             <TouchableOpacity
               className="py-3"
-              onPress={() => setIsSignUp(!isSignUp)}
+              onPress={() => {
+                setIsSignUp(!isSignUp);
+                setNotice(null);
+              }}
               disabled={loading}
             >
               <Text className="text-center text-blue-600 font-medium">
