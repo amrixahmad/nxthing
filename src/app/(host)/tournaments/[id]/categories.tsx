@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Modal, RefreshControl } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Modal, RefreshControl, useWindowDimensions } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useToast } from "@/src/components/Toast";
@@ -70,6 +70,16 @@ type CategoryStats = {
   paidMembers: number;
 };
 
+type TeamInfo = {
+  entryId: number;
+  teamName: string;
+  status: string;
+  paymentStatus: string;
+  members: Array<{ name: string; paymentStatus: string }>;
+  minMembers: number;
+  maxMembers: number;
+};
+
 type Tournament = {
   id: number;
   title: string | null;
@@ -85,10 +95,15 @@ export default function ManageCategories() {
   const params = useLocalSearchParams<{ id: string }>();
   const tid = Number(params.id);
   const toast = useToast();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 640;
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [items, setItems] = useState<Category[]>([]);
   const [categoryStats, setCategoryStats] = useState<Record<number, CategoryStats>>({});
+  const [teamsByCategory, setTeamsByCategory] = useState<Record<number, TeamInfo[]>>({});
+  const [expandedTeams, setExpandedTeams] = useState<Record<number, boolean>>({});
+  const [showTeamList, setShowTeamList] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -232,26 +247,30 @@ export default function ManageCategories() {
       .order("id", { ascending: true });
     setItems((cats as any[]) || []);
 
-    // Fetch registration stats for each category
+    // Fetch registration stats and team details for each category
     if (cats && cats.length > 0) {
       const catIds = cats.map((c: any) => c.id);
       const { data: entries } = await supabase
         .from("entries")
-        .select("id, category_id, status, payment_status")
+        .select("id, category_id, status, payment_status, team_name")
         .in("category_id", catIds);
       
+      const entryIds = (entries || []).map((e: any) => e.id);
       const { data: members } = await supabase
         .from("entry_members")
-        .select("entry_id, payment_status, entry:entry_id(category_id)")
-        .in("entry_id", (entries || []).map((e: any) => e.id));
+        .select("entry_id, payment_status, display_name, profile:profile_id(full_name, username)")
+        .in("entry_id", entryIds);
 
       const stats: Record<number, CategoryStats> = {};
+      const teams: Record<number, TeamInfo[]> = {};
+      
       for (const cat of cats as any[]) {
         const catEntries = (entries || []).filter((e: any) => e.category_id === cat.id);
         const catMembers = (members || []).filter((m: any) => {
-          const entry = Array.isArray(m.entry) ? m.entry[0] : m.entry;
-          return entry?.category_id === cat.id;
+          const entryMatch = catEntries.find((e: any) => e.id === m.entry_id);
+          return !!entryMatch;
         });
+        
         stats[cat.id] = {
           totalEntries: catEntries.length,
           acceptedEntries: catEntries.filter((e: any) => e.status === "accepted").length,
@@ -259,8 +278,31 @@ export default function ManageCategories() {
           totalMembers: catMembers.length,
           paidMembers: catMembers.filter((m: any) => m.payment_status === "paid" || m.payment_status === "waived").length,
         };
+
+        // Build team list for this category
+        const teamList: TeamInfo[] = catEntries.map((entry: any) => {
+          const entryMembers = (members || []).filter((m: any) => m.entry_id === entry.id);
+          const memberList = entryMembers.map((m: any) => {
+            const profile = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+            return {
+              name: m.display_name || profile?.full_name || profile?.username || 'Unknown',
+              paymentStatus: m.payment_status || 'unpaid',
+            };
+          });
+          return {
+            entryId: entry.id,
+            teamName: entry.team_name || memberList.map((m: any) => m.name).join(' / ') || `Entry #${entry.id}`,
+            status: entry.status || 'pending',
+            paymentStatus: entry.payment_status || 'unpaid',
+            members: memberList,
+            minMembers: cat.members_per_team_min || 1,
+            maxMembers: cat.members_per_team_max || 99,
+          };
+        });
+        teams[cat.id] = teamList.sort((a, b) => a.teamName.localeCompare(b.teamName));
       }
       setCategoryStats(stats);
+      setTeamsByCategory(teams);
     }
 
     setLoading(false);
@@ -729,8 +771,105 @@ export default function ManageCategories() {
                         </Text>
                       </View>
                     )}
+                    
+                    {/* View Teams Toggle */}
+                    {stats.totalEntries > 0 && (
+                      <TouchableOpacity
+                        className="mt-3 flex-row items-center"
+                        onPress={() => setShowTeamList((m) => ({ ...m, [c.id]: !m[c.id] }))}
+                      >
+                        <Text className="text-xs text-blue-600 font-medium">
+                          {showTeamList[c.id] ? "Hide Teams" : "View Teams"}
+                        </Text>
+                        <Text className="text-xs text-blue-400 ml-1">
+                          {showTeamList[c.id] ? "▲" : "▼"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
+                
+                {/* Team List */}
+                {showTeamList[c.id] && teamsByCategory[c.id] && teamsByCategory[c.id].length > 0 && (
+                  <View className="mb-3 p-3 rounded-lg bg-white border border-gray-200">
+                    <View className="flex-row items-center justify-between mb-3">
+                      <Text className="text-sm font-semibold text-gray-800">
+                        Registered {c.participation_type === "team" ? "Teams" : "Entries"}
+                      </Text>
+                      <View className="px-2 py-0.5 rounded-full bg-blue-100">
+                        <Text className="text-xs font-medium text-blue-700">{teamsByCategory[c.id].length}</Text>
+                      </View>
+                    </View>
+                    <View className={`flex-row flex-wrap ${isMobile ? '' : '-m-1'}`}>
+                      {teamsByCategory[c.id].map((team) => {
+                        const isExpanded = !!expandedTeams[team.entryId];
+                        const paidCount = team.members.filter((m) => m.paymentStatus === 'paid' || m.paymentStatus === 'waived').length;
+                        const isReady = team.status === 'accepted' && team.members.length >= team.minMembers && paidCount >= team.minMembers;
+                        const isIncomplete = team.members.length < team.minMembers;
+                        const hasUnpaid = paidCount < team.members.length;
+                        
+                        let statusColor = 'bg-gray-100 border-gray-200';
+                        let statusBadge = null;
+                        if (team.status === 'pending') {
+                          statusColor = 'bg-yellow-50 border-yellow-200';
+                          statusBadge = <View className="px-1.5 py-0.5 rounded bg-yellow-100"><Text className="text-[10px] text-yellow-700">Pending</Text></View>;
+                        } else if (isIncomplete) {
+                          statusColor = 'bg-red-50 border-red-200';
+                          statusBadge = <View className="px-1.5 py-0.5 rounded bg-red-100"><Text className="text-[10px] text-red-700">Incomplete</Text></View>;
+                        } else if (hasUnpaid && !isFree) {
+                          statusColor = 'bg-orange-50 border-orange-200';
+                          statusBadge = <View className="px-1.5 py-0.5 rounded bg-orange-100"><Text className="text-[10px] text-orange-700">Unpaid</Text></View>;
+                        } else if (isReady) {
+                          statusColor = 'bg-green-50 border-green-200';
+                          statusBadge = <View className="px-1.5 py-0.5 rounded bg-green-100"><Text className="text-[10px] text-green-700">Ready</Text></View>;
+                        }
+                        
+                        return (
+                          <View key={team.entryId} className={isMobile ? 'w-full mb-2' : 'p-1'} style={isMobile ? undefined : { width: '50%' }}>
+                            <TouchableOpacity
+                              className={`p-3 rounded-lg border ${isExpanded ? 'bg-blue-50 border-blue-200' : statusColor}`}
+                              onPress={() => setExpandedTeams((m) => ({ ...m, [team.entryId]: !isExpanded }))}
+                              activeOpacity={0.7}
+                            >
+                              <View className="flex-row items-center justify-between">
+                                <Text className="text-sm font-medium text-gray-900 flex-1" numberOfLines={1}>
+                                  {team.teamName}
+                                </Text>
+                                <View className="flex-row items-center">
+                                  {statusBadge}
+                                  <Text className="text-xs text-gray-400 ml-2">
+                                    {isExpanded ? "▲" : "▼"}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Text className="text-xs text-gray-500 mt-0.5">
+                                {team.members.length}/{team.minMembers}+ players • {paidCount} {isFree ? "confirmed" : "paid"}
+                              </Text>
+                              {isExpanded && team.members.length > 0 && (
+                                <View className="mt-2 pt-2 border-t border-gray-200">
+                                  {team.members.map((member, mIdx) => {
+                                    const isPaid = member.paymentStatus === 'paid' || member.paymentStatus === 'waived';
+                                    return (
+                                      <View key={mIdx} className="flex-row items-center justify-between py-0.5">
+                                        <Text className="text-xs text-gray-700">• {member.name}</Text>
+                                        <View className={`px-1.5 py-0.5 rounded ${isPaid ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                          <Text className={`text-[10px] ${isPaid ? 'text-green-700' : 'text-gray-500'}`}>
+                                            {isPaid ? (isFree ? '✓' : 'Paid') : (isFree ? 'Pending' : 'Unpaid')}
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+                
                 <View className="flex-row flex-wrap gap-2">
                   <TouchableOpacity
                     className="px-3 py-2 rounded-lg border border-gray-300"
