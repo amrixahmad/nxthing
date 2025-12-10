@@ -49,22 +49,49 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        // Check URL for password reset flow
+        // Check URL for password reset or email confirmation flow
         if (Platform.OS === "web" && typeof window !== "undefined") {
           const hash = window.location.hash;
           const search = window.location.search;
           console.log("Auth callback - hash:", hash, "search:", search);
           
+          // Check for password recovery
           if (hash.includes("type=recovery") || search.includes("type=recovery")) {
             setIsPasswordReset(true);
             setMessage("Set your new password below.");
             setInitialized(true);
             return;
           }
+          
+          // Check for email confirmation (type=signup or type=email_change)
+          if (hash.includes("type=signup") || hash.includes("type=email_change")) {
+            // Supabase should have already processed the token from the hash
+            // Wait a moment for the session to be established
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Verify the session was created
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            if (currentSession) {
+              setMessage("Email confirmed successfully! Redirecting...");
+            } else {
+              setMessage("Email confirmed. Please sign in to continue.");
+            }
+            setInitialized(true);
+            return;
+          }
+          
+          // If there's a hash with access_token, Supabase is processing auth
+          if (hash.includes("access_token")) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            setMessage("Authentication complete. Redirecting...");
+            setInitialized(true);
+            return;
+          }
         }
         await Linking.getInitialURL();
         setMessage("Email verified. You can continue in the app.");
-      } catch {
+      } catch (err) {
+        console.error("Auth callback error:", err);
         setMessage("Email verified. You can continue in the app.");
       }
       setInitialized(true);

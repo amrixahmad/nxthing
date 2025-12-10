@@ -85,6 +85,7 @@ export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [notice, setNotice] = useState<null | { type: "success" | "error"; text: string }>(null);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [showResendConfirmation, setShowResendConfirmation] = useState(false);
   const SHOW_APPLE_LOGIN = false;
 
   /**
@@ -113,7 +114,8 @@ export default function Auth() {
       const emsg = String(error.message || "").toLowerCase();
       // Check if email is not confirmed
       if (emsg.includes("email not confirmed")) {
-        setNotice({ type: "error", text: "Please check your email and confirm your account before signing in." });
+        setNotice({ type: "error", text: "Your email is not confirmed yet. Check your inbox for the confirmation link, or click 'Resend Confirmation' below." });
+        setShowResendConfirmation(true);
       } else if (emsg.includes("invalid login") || emsg.includes("invalid email")) {
         setNotice({ type: "error", text: "Incorrect email or password. If you previously signed in with Google, please use 'Continue with Google' above or click 'Forgot Password' to set a password for email login." });
       } else {
@@ -202,6 +204,44 @@ export default function Auth() {
     } else {
       setNotice({ type: "success", text: "Password reset email sent! Check your inbox." });
       setForgotPasswordMode(false);
+    }
+    setLoading(false);
+  }
+
+  /**
+   * Resends the confirmation email to the user
+   */
+  async function handleResendConfirmation() {
+    if (!email) {
+      setNotice({ type: "error", text: "Please enter your email address" });
+      return;
+    }
+
+    setLoading(true);
+    setNotice(null);
+
+    let redirectTo: string | undefined;
+    try {
+      if (Platform.OS === "web") {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        redirectTo = `${origin}/auth-callback`;
+      } else {
+        redirectTo = "myapp://auth-callback";
+      }
+    } catch {}
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: email.trim(),
+      options: { emailRedirectTo: redirectTo },
+    });
+
+    if (error) {
+      console.error("Resend confirmation error:", error.message);
+      setNotice({ type: "error", text: error.message });
+    } else {
+      setNotice({ type: "success", text: "Confirmation email sent! Please check your inbox and click the link." });
+      setShowResendConfirmation(false);
     }
     setLoading(false);
   }
@@ -373,6 +413,19 @@ export default function Auth() {
               <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
             ) : null}
 
+            {/* Resend confirmation button */}
+            {showResendConfirmation && !isSignUp && (
+              <TouchableOpacity
+                className="mb-3 py-2"
+                onPress={handleResendConfirmation}
+                disabled={loading}
+              >
+                <Text className="text-blue-600 font-medium text-center">
+                  📧 Resend Confirmation Email
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Email Input */}
             <View className="mb-4">
               <Text className="text-base font-medium text-gray-700 mb-2">
@@ -526,6 +579,7 @@ export default function Auth() {
                   onPress={() => {
                     setIsSignUp(!isSignUp);
                     setNotice(null);
+                    setShowResendConfirmation(false);
                   }}
                   disabled={loading}
                 >
