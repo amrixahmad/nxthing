@@ -84,6 +84,7 @@ export default function Auth() {
   /** Toggle between sign in and sign up modes */
   const [isSignUp, setIsSignUp] = useState(false);
   const [notice, setNotice] = useState<null | { type: "success" | "error"; text: string }>(null);
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const SHOW_APPLE_LOGIN = false;
 
   /**
@@ -108,11 +109,16 @@ export default function Auth() {
     });
 
     if (error) {
+      console.error("Sign in error:", error.message, error.status, error);
       const emsg = String(error.message || "").toLowerCase();
-      const msg = emsg.includes("invalid login") || emsg.includes("invalid email")
-        ? "Incorrect email or password."
-        : error.message;
-      setNotice({ type: "error", text: msg });
+      // Check if email is not confirmed
+      if (emsg.includes("email not confirmed")) {
+        setNotice({ type: "error", text: "Please check your email and confirm your account before signing in." });
+      } else if (emsg.includes("invalid login") || emsg.includes("invalid email")) {
+        setNotice({ type: "error", text: "Incorrect email or password. If you previously signed in with Google, please use 'Continue with Google' above or click 'Forgot Password' to set a password for email login." });
+      } else {
+        setNotice({ type: "error", text: error.message });
+      }
     } else {
       setNotice({ type: "success", text: "Signed in successfully. Redirecting..." });
       setTimeout(() => {
@@ -154,6 +160,43 @@ export default function Auth() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * Handles password reset request
+   * Sends a password reset email to the user
+   */
+  async function handleForgotPassword() {
+    if (!email) {
+      setNotice({ type: "error", text: "Please enter your email address" });
+      return;
+    }
+
+    setLoading(true);
+    setNotice(null);
+
+    let redirectTo: string | undefined;
+    try {
+      if (Platform.OS === "web") {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        redirectTo = `${origin}/auth-callback`;
+      } else {
+        redirectTo = "myapp://auth-callback";
+      }
+    } catch {}
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo,
+    });
+
+    if (error) {
+      console.error("Password reset error:", error.message);
+      setNotice({ type: "error", text: error.message });
+    } else {
+      setNotice({ type: "success", text: "Password reset email sent! Check your inbox." });
+      setForgotPasswordMode(false);
+    }
+    setLoading(false);
   }
 
   /**
@@ -330,6 +373,15 @@ export default function Auth() {
                 <Text className="text-sm text-gray-500 mt-1">
                   Password must be at least 6 characters long
                 </Text>
+              )}
+              {!isSignUp && (
+                <TouchableOpacity
+                  className="mt-2"
+                  onPress={handleForgotPassword}
+                  disabled={loading}
+                >
+                  <Text className="text-sm text-blue-600">Forgot Password?</Text>
+                </TouchableOpacity>
               )}
             </View>
 
