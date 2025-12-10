@@ -193,7 +193,7 @@ export default function ManageCategories() {
       setSaving(true);
       
       // Build update payload
-      const updatePayload: Record<string, any> = { status: open ? "registration_open" : "draft" };
+      const updatePayload: Record<string, any> = { status: open ? "registration_open" : "registration_closed" };
       
       // If opening and no window set, auto-set to now → tournament start
       if (open && (!tournament.registration_start_date || !tournament.registration_end_date)) {
@@ -201,6 +201,11 @@ export default function ManageCategories() {
         const regEnd = tournament.start_date ? new Date(tournament.start_date) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // fallback: 7 days from now
         updatePayload.registration_start_date = now.toISOString();
         updatePayload.registration_end_date = regEnd.toISOString();
+      }
+      
+      // If closing registration early, set end date to now so brackets can be generated
+      if (!open) {
+        updatePayload.registration_end_date = new Date().toISOString();
       }
       
       const { error } = await supabase
