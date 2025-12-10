@@ -90,7 +90,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq("id", categoryId)
       .maybeSingle();
     if (catErr || !cat) {
-      return new Response(JSON.stringify({ error: "Category not found" }), {
+      return new Response(JSON.stringify({ error: "Category not found. Please refresh and try again." }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -102,7 +102,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq("id", (cat as CategoryRow).tournament_id)
       .maybeSingle();
     if (tErr || !tour) {
-      return new Response(JSON.stringify({ error: "Tournament not found" }), {
+      return new Response(JSON.stringify({ error: "Tournament not found. Please refresh and try again." }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -110,8 +110,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const regEndRaw = (tour as TournamentRow).registration_end_date;
     const regEnd = regEndRaw ? new Date(regEndRaw) : null;
-    if (!regEnd || regEnd.getTime() > Date.now()) {
-      return new Response(JSON.stringify({ error: "Registration not closed yet" }), {
+    if (!regEnd) {
+      return new Response(JSON.stringify({ error: "Please set a registration end date before generating brackets." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (regEnd.getTime() > Date.now()) {
+      return new Response(JSON.stringify({ error: "Registration is still open. Close registration first before generating brackets." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -121,12 +127,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Check fixtures for team format, matches for others
     const isTeamFormat = (cat as any).participation_type === 'team';
     
+    // Also check for existing rounds (in case previous attempt partially succeeded)
+    const { count: existingRounds } = await supabase
+      .from("rounds")
+      .select("id", { count: "exact", head: true })
+      .eq("category_id", categoryId);
+    
     if (isTeamFormat) {
         const { count: existingFixtures } = await supabase
             .from("fixtures")
             .select("id", { count: "exact", head: true })
             .eq("category_id", categoryId);
-        if ((existingFixtures || 0) > 0) {
+        if ((existingFixtures || 0) > 0 || (existingRounds || 0) > 0) {
             return new Response(JSON.stringify({ ok: true, message: "Bracket already exists" }), {
                 status: 200,
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -137,7 +149,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .from("matches")
         .select("id", { count: "exact", head: true })
         .eq("category_id", categoryId);
-        if ((existingCount || 0) > 0) {
+        if ((existingCount || 0) > 0 || (existingRounds || 0) > 0) {
         return new Response(JSON.stringify({ ok: true, message: "Bracket already exists" }), {
             status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -156,7 +168,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const ids = (entries as Entry[]).map((e) => e.id);
 
     if (ids.length < 2) {
-      return new Response(JSON.stringify({ error: "Need at least two entries to generate a bracket" }), {
+      return new Response(JSON.stringify({ error: `Need at least 2 confirmed teams to generate a bracket. Currently have ${ids.length} confirmed.` }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -449,7 +461,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
   } catch (err) {
     console.error("generate-bracket error:", err);
-    const errorMessage = (err as any)?.message || String(err) || "Internal error";
+    const rawMessage = (err as any)?.message || String(err) || "";
+    
+    // Provide user-friendly messages for common database errors
+    let errorMessage = "An unexpected error occurred while generating the bracket.";
+    
+    if (rawMessage.includes("duplicate key") || rawMessage.includes("unique constraint")) {
+      errorMessage = "Bracket data already exists. Please contact support if you need to regenerate.";
+    } else if (rawMessage.includes("violates foreign key")) {
+      errorMessage = "Invalid team or category reference. Please refresh and try again.";
+    } else if (rawMessage.includes("permission denied") || rawMessage.includes("RLS")) {
+      errorMessage = "Permission denied. Please ensure you are logged in as the tournament organizer.";
+    } else if (rawMessage) {
+      // Pass through other specific error messages
+      errorMessage = rawMessage;
+    }
+    
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
