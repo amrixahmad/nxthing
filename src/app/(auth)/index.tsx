@@ -316,9 +316,6 @@ export default function Auth() {
             <Text className="text-xl font-semibold text-gray-900 mb-6 text-center">
               {isSignUp ? "Create Account" : "Sign In"}
             </Text>
-            {notice ? (
-              <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
-            ) : null}
 
             <>
               <TouchableOpacity
@@ -356,6 +353,11 @@ export default function Auth() {
                 <View className="flex-1 h-px bg-gray-200" />
               </View>
             </>
+
+            {/* Notice - shown above email input */}
+            {notice ? (
+              <Text className={`mb-3 ${notice.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>{notice.text}</Text>
+            ) : null}
 
             {/* Email Input */}
             <View className="mb-4">
