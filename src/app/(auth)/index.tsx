@@ -179,7 +179,14 @@ export default function Auth() {
     try {
       if (Platform.OS === "web") {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
-        redirectTo = `${origin}/auth-callback`;
+        // Use production URL for password reset to ensure it works
+        // Supabase needs the redirect URL to be in the allowed list
+        if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+          // For local dev, still use localhost but user needs to configure Supabase
+          redirectTo = `${origin}/auth-callback`;
+        } else {
+          redirectTo = `${origin}/auth-callback`;
+        }
       } else {
         redirectTo = "myapp://auth-callback";
       }

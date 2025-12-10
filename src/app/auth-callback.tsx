@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { View, Text, TouchableOpacity, TextInput, Platform } from "react-native";
 import { Stack, router } from "expo-router";
 import * as Linking from "expo-linking";
@@ -9,7 +9,9 @@ import { supabase } from "../../lib/supabase";
 function checkIsRecoveryMode(): boolean {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     const hash = window.location.hash;
-    return hash.includes("type=recovery");
+    const search = window.location.search;
+    // Check both hash and query params for recovery indicators
+    return hash.includes("type=recovery") || search.includes("type=recovery");
   }
   return false;
 }
@@ -24,14 +26,36 @@ export default function AuthCallback() {
   const [updating, setUpdating] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const hasCheckedAuth = useRef(false);
 
   useEffect(() => {
+    // Listen for PASSWORD_RECOVERY event from Supabase
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, _session) => {
+      console.log("Auth callback event:", event);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordReset(true);
+        setMessage("Set your new password below.");
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasCheckedAuth.current) return;
+    hasCheckedAuth.current = true;
+
     (async () => {
       try {
-        // Double-check URL for password reset flow
+        // Check URL for password reset flow
         if (Platform.OS === "web" && typeof window !== "undefined") {
           const hash = window.location.hash;
-          if (hash.includes("type=recovery")) {
+          const search = window.location.search;
+          console.log("Auth callback - hash:", hash, "search:", search);
+          
+          if (hash.includes("type=recovery") || search.includes("type=recovery")) {
             setIsPasswordReset(true);
             setMessage("Set your new password below.");
             setInitialized(true);
@@ -49,9 +73,14 @@ export default function AuthCallback() {
 
   useEffect(() => {
     // Only auto-redirect if not in password reset mode AND initialization is complete
-    if (initialized && !loading && session && !isPasswordReset) {
-      router.replace("/" as any);
-    }
+    // Add a small delay to allow PASSWORD_RECOVERY event to fire
+    const timer = setTimeout(() => {
+      if (initialized && !loading && session && !isPasswordReset) {
+        router.replace("/" as any);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timer);
   }, [loading, session, isPasswordReset, initialized]);
 
   async function handleUpdatePassword() {
